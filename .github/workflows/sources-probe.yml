@@ -56,7 +56,7 @@ jobs:
               raw = r.text
               urls = sorted(set(re.findall(r"""["'](/[A-Za-z0-9_\-/\.]*(?:agm|ajax|json|list|data|financ|report)[A-Za-z0-9_\-/\.?=&]*)["']""", raw, re.I)))[:25]
               print("script/ajax-looking urls:", urls)
-              t = html.unescape(re.sub(r"\s+", " ", re.sub(r"(?s)<[^>]+>", " ", re.sub(r"(?is)<(script|style)[^>]*>.*?</\\1>", " ", raw))))
+              t = html.unescape(re.sub(r"\s+", " ", re.sub(r"(?s)<[^>]+>", " ", re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", raw))))
               for w in words:
                   i = t.find(w)
                   print("--", w, "->", t[max(0, i - 80): i + width] if i >= 0 else "not found")

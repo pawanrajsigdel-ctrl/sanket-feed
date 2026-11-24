@@ -408,7 +408,7 @@ LONG_URL = "https://raw.githubusercontent.com/Aabishkar2/nepse-data/main/data/co
 def parse_company_page(html):
     """Company figures from a public company page: earnings per share (with the quarter), P/E, book value, P/B, market value, 52-week range, latest dividend and bonus."""
     import re, html as H
-    h = re.sub(r"(?is)<(script|style|noscript)[^>]*>.*?</\\1>", " ", html)
+    h = re.sub(r"(?is)<(script|style|noscript)[^>]*>.*?</\1>", " ", html)
     txt = H.unescape(re.sub(r"(?s)<[^>]+>", " ", h)).replace("\xa0", " ")
     txt = re.sub(r"\s+", " ", txt)
     N = r"(-?[\d,]+(?:\.\d+)?)"
