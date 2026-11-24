@@ -28,6 +28,23 @@ jobs:
               except Exception as e:
                   print("FAIL", m, "->", repr(e)[:160])
           PY
+      - name: YoNepse file layout (new paths)
+        run: |
+          for f in notify/disclosures.json notify/notices.json notify/exchange_messages.json ipo/upcoming.json dividend/history.json company/financials.json company/profiles.json; do
+            printf '\n=== %s -> ' "$f"; curl -sS -m 25 -L -o /tmp/y.json -w "HTTP %{http_code}, %{size_download} bytes\n" "https://shubhamnpk.github.io/yonepse/data/$f" || echo unreachable
+            python3 - <<'PY'
+          import json
+          try:
+              j = json.load(open("/tmp/y.json"))
+          except Exception as e:
+              print("not JSON:", e); raise SystemExit
+          rows = j if isinstance(j, list) else next((v for v in j.values() if isinstance(v, list)), None) if isinstance(j, dict) else None
+          print("top level:", type(j).__name__, (list(j.keys())[:12] if isinstance(j, dict) else ""), "| records:", len(rows) if rows is not None else "-")
+          if rows:
+              print("fields:", list(rows[0].keys()) if isinstance(rows[0], dict) else rows[0])
+              print("sample:", json.dumps(rows[0], ensure_ascii=False)[:500])
+          PY
+          done
       - name: Outside sources
         run: |
           for u in \

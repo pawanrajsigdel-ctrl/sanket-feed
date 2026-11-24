@@ -1,0 +1,27 @@
+name: Sanket company figures
+# Reads EPS, P/E, book value, P/B, dividend and bonus for every company (one public page about each second) and stores them. Runs each evening after the close.
+on:
+  schedule:
+    - cron: "20 11 * * 0-4"   # 17:05 Nepal time, Sunday to Thursday
+  workflow_dispatch:
+    inputs:
+      check:
+        description: "Only print what is read for these symbols, e.g. NABIL NICA (nothing is stored). Leave empty to store all."
+        required: false
+        default: ""
+concurrency:
+  group: sanket-fundamentals
+  cancel-in-progress: false
+jobs:
+  fundamentals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -q git+https://github.com/basic-bgnr/NepseUnofficialApi requests
+      - run: python -u feed.py fundamentals ${{ github.event.inputs.check }}
+        env:
+          NP_API: ${{ secrets.NP_API }}
+          NP_KEY: ${{ secrets.NP_KEY }}

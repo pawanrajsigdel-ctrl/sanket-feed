@@ -405,6 +405,61 @@ def cmd_history():
 LONG_URL = "https://raw.githubusercontent.com/Aabishkar2/nepse-data/main/data/company-wise/%s.csv"
 
 
+def parse_company_page(html):
+    """Company figures from a public company page: earnings per share (with the quarter), P/E, book value, P/B, market value, 52-week range, latest dividend and bonus."""
+    import re, html as H
+    h = re.sub(r"(?is)<(script|style|noscript)[^>]*>.*?</\\1>", " ", html)
+    txt = H.unescape(re.sub(r"(?s)<[^>]+>", " ", h)).replace("\xa0", " ")
+    txt = re.sub(r"\s+", " ", txt)
+    N = r"(-?[\d,]+(?:\.\d+)?)"
+    def f(m, i=1):
+        return float(m.group(i).replace(",", "")) if m else None
+    out = {}
+    m = re.search(r"\bEPS\s*" + N + r"\s*\(\s*FY\s*:\s*([\d\-/]+)\s*,?\s*Q\s*:\s*(\d)\s*\)", txt)
+    if m: out["eps"], out["fy"], out["q"] = f(m), m.group(2), int(m.group(3))
+    else:
+        m = re.search(r"\bEPS\s*" + N, txt)
+        if m: out["eps"] = f(m)
+    for key, pat in (("pe", r"P/E Ratio\s*"), ("bv", r"Book Value\s*"), ("pbv", r"\bPBV\s*"), ("mcap", r"Market Capitalization\s*"), ("shares", r"Shares Outstanding\s*")):
+        m = re.search(pat + N, txt)
+        if m: out[key] = f(m)
+    m = re.search(r"52 Weeks High - Low\s*" + N + r"\s*-\s*" + N, txt)
+    if m: out["hi52"], out["lo52"] = f(m, 1), f(m, 2)
+    m = re.search(r"% Dividend\s*" + N + r"\s*\(\s*FY\s*:\s*([\d\-/]+)\s*\)", txt)
+    if m: out["div_pct"], out["div_fy"] = f(m), m.group(2)
+    m = re.search(r"% Bonus\s*" + N + r"\s*\(\s*FY\s*:\s*([\d\-/]+)\s*\)", txt)
+    if m: out["bonus_pct"], out["bonus_fy"] = f(m), m.group(2)
+    return out
+
+
+def cmd_fundamentals():
+    """EPS, P/E, book value, P/B, dividend and bonus for every listed company, read politely (one page about every second) from the public
+    company pages on merolagani.com. Run it daily; `python feed.py fundamentals NABIL NICA` only prints what it reads, for a check."""
+    only = [a.upper() for a in sys.argv[2:]]
+    sec = sectors()
+    symbols = only or sorted(s for s in sec if "/" not in s and not any(w in str(sec[s][1]).lower() for w in ("debenture", "preference", "promoter")))
+    batch, got, miss = [], 0, []
+    for i, s in enumerate(symbols):
+        try:
+            r = requests.get("https://merolagani.com/CompanyDetail.aspx?symbol=" + s, headers={"User-Agent": "Mozilla/5.0 (compatible; SanketFeed/1.0)"}, timeout=25)
+            d = parse_company_page(r.text) if r.status_code == 200 else {}
+        except Exception as e:
+            d = {}
+            print("  ! %s: %r" % (s, e))
+        if d.get("eps") is not None or d.get("bv") is not None:
+            d["symbol"] = s; batch.append(d); got += 1
+            if only or got <= 3:
+                print("  %s -> %s" % (s, {k: v for k, v in d.items() if k != "symbol"}))
+        else:
+            miss.append(s)
+        if len(batch) >= 40 and not only:
+            send("fund", rows=batch); batch = []
+        time.sleep(1.0)
+    if batch and not only:
+        send("fund", rows=batch)
+    print("fundamentals: %d read, %d without figures%s" % (got, len(miss), (" (e.g. " + ", ".join(miss[:8]) + ")") if miss else ""))
+
+
 def cmd_longhistory():
     """Ten years (NP_LONG_YEARS) of month-by-month lowest, highest and closing prices for every stock, from the public dataset
     github.com/Aabishkar2/nepse-data (one CSV per company, MIT licence). It feeds the pattern finder; only 120 small rows per stock are stored."""
@@ -521,4 +576,4 @@ def cmd_auto():
 
 
 if __name__ == "__main__":
-    {"probe": cmd_probe, "live": cmd_live, "close": cmd_close, "history": cmd_history, "fresh": cmd_fresh, "floor": cmd_floor, "auto": cmd_auto, "longhistory": cmd_longhistory}.get(sys.argv[1] if len(sys.argv) > 1 else "", lambda: print(__doc__))()
+    {"probe": cmd_probe, "live": cmd_live, "close": cmd_close, "history": cmd_history, "fresh": cmd_fresh, "floor": cmd_floor, "auto": cmd_auto, "longhistory": cmd_longhistory, "fundamentals": cmd_fundamentals}.get(sys.argv[1] if len(sys.argv) > 1 else "", lambda: print(__doc__))()
