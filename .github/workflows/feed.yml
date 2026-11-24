@@ -1,0 +1,24 @@
+name: Sanket live feed
+# Runs on GitHub's free cloud computers (this repo is public, so the minutes are unlimited), Sunday to Thursday.
+# It starts before the NEPSE session, sends live prices until 15:05 Nepal time, then saves the daily close (brokers, analysis).
+on:
+  schedule:
+    - cron: "20 4 * * 0-4"   # 10:05 Nepal time; GitHub may start it up to about an hour late, the feed waits for the market by itself
+  workflow_dispatch:
+concurrency:
+  group: sanket-feed
+  cancel-in-progress: false
+jobs:
+  feed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 358
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -q git+https://github.com/basic-bgnr/NepseUnofficialApi requests
+      - run: python -u feed.py auto
+        env:
+          NP_API: ${{ secrets.NP_API }}
+          NP_KEY: ${{ secrets.NP_KEY }}
+          NP_NO_HISTORY: "1"

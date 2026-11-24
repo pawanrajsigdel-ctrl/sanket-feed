@@ -1,0 +1,22 @@
+name: Sanket price history
+# Loads older daily prices a little each evening, within the free daily database budget, until every stock is stored.
+on:
+  schedule:
+    - cron: "50 10 * * *"   # 16:35 Nepal time, after the daily close
+  workflow_dispatch:
+concurrency:
+  group: sanket-history
+  cancel-in-progress: false
+jobs:
+  history:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -q git+https://github.com/basic-bgnr/NepseUnofficialApi requests
+      - run: python -u feed.py history
+        env:
+          NP_API: ${{ secrets.NP_API }}
+          NP_KEY: ${{ secrets.NP_KEY }}
