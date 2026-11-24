@@ -387,7 +387,8 @@ def cmd_history():
                     continue
                 seen.add(d)
                 prev = bars[-1]["c"] if bars else 0
-                bars.append({"d": d, "o": prev or c, "h": num(pick(r, "highPrice")) or c, "l": num(pick(r, "lowPrice")) or c, "c": c, "prev": prev,
+                nepse_prev = num(pick(r, "previousDayClosePrice", "previousClose", "previousDayClose"))  # NEPSE's own (bonus/right adjusted) previous close, when the row has it
+                bars.append({"d": d, "o": prev or c, "h": num(pick(r, "highPrice")) or c, "l": num(pick(r, "lowPrice")) or c, "c": c, "prev": nepse_prev or prev,
                              "v": num(pick(r, "totalTradedQuantity")), "t": num(pick(r, "totalTradedValue")), "trades": num(pick(r, "totalTrades"))})
             for i in range(0, len(bars), 800):
                 send("history", symbol=s, bars=bars[i:i + 800])
@@ -430,11 +431,32 @@ def cmd_longhistory():
             if r.status_code != 200:
                 continue
             months = {}
+            recs = []
             for row in csv.DictReader(io.StringIO(r.text)):
                 d = str(row.get("published_date") or row.get("date") or "")[:10]
-                ym = d[:7]
                 c, hi, lo = num(row.get("close")), num(row.get("high")), num(row.get("low"))
-                if len(ym) != 7 or ym < first_ym or c <= 0:
+                if len(d) == 10 and c > 0:
+                    pcv = row.get("per_change")
+                    recs.append([d, c, hi or c, lo or c, num(pcv) if str(pcv or "").strip() not in ("", "None", "null") else None])
+            recs.sort()
+            # Bonus and right shares: NEPSE's percentage change is measured from an adjusted previous close, so when it does not match yesterday's close
+            # the difference is a corporate action; every earlier price is scaled by it (the newest prices stay as they are).
+            k, events = 1.0, 0
+            raw = [x[1] for x in recs]  # unscaled closes: the check below must not see the scaling from later events
+            for i in range(len(recs) - 1, 0, -1):
+                c, pc_ = raw[i], recs[i][4]
+                if pc_ is not None and abs(pc_) < 100:  # 0% on the day of a bonus is exactly the case to catch
+                    implied_prev = c / (1 + pc_ / 100.0)
+                    ratio = implied_prev / raw[i - 1]
+                    if abs(ratio - 1) > 0.02 and 0.3 < ratio < 3:
+                        k *= ratio; events += 1
+                if k != 1.0:
+                    recs[i - 1][1] *= k; recs[i - 1][2] *= k; recs[i - 1][3] *= k
+            if events:
+                print("  %s: %d bonus/right adjustments" % (s, events))
+            for d, c, hi, lo, _pc in recs:
+                ym = d[:7]
+                if len(ym) != 7 or ym < first_ym:
                     continue
                 m = months.setdefault(ym, {"symbol": s, "ym": ym, "lo": 0, "hi": 0, "c": c, "_d": ""})
                 hi, lo = hi or c, lo or c
