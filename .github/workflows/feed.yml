@@ -22,3 +22,4 @@ jobs:
           NP_API: ${{ secrets.NP_API }}
           NP_KEY: ${{ secrets.NP_KEY }}
           NP_NO_HISTORY: "1"
+          NP_EXIT_AFTER_CLOSE: "1"

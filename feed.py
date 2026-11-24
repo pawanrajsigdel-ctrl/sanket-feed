@@ -353,7 +353,16 @@ def cmd_history():
         have = requests.get(API + "/api/np/have", timeout=30).json().get("bars", {})
     except Exception as e:
         print("could not read what is already stored:", e)
-    for s in sorted(sectors()):
+    sec = sectors()
+    try:  # busiest stocks first, so the analysis and picks work after the first day; funds, debentures and preference shares last
+        turn = {r["symbol"]: r["t"] for r in today_rows()}
+    except Exception:
+        turn = {}
+    def rank(sym):
+        sector = str(sec[sym][1]).lower()
+        late = any(w in sector for w in ("debenture", "mutual", "preference", "promoter", "fund"))
+        return (late, -turn.get(sym, 0), sym)
+    for s in sorted(sec, key=rank):
         if have.get(s, 0) >= 200 and not os.environ.get("NP_FORCE"):
             continue  # already stored; the free database allows only about 100,000 row writes a day
         if AUTO and market_open():
@@ -415,6 +424,9 @@ def cmd_auto():
                 close_tries += 1
                 if got != 0 or close_tries >= 12:  # brokers stored, or an hour of tries
                     closed_day = n.date(); close_tries = 0
+                    if os.environ.get("NP_EXIT_AFTER_CLOSE") == "1":
+                        print("Close saved; finished for today.")
+                        return
                 else:
                     print("broker numbers not released yet; trying again in 5 minutes")
                     time.sleep(300)
