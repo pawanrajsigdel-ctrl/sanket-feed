@@ -318,7 +318,7 @@ def cmd_close():
         if not out:
             print("broker numbers are hidden by NEPSE until the market has closed; run close again after 15:00")
         for i in range(0, len(out), 400):
-            send("floor", d=day, first=(i == 0), rows=out[i:i + 400])
+            send("floor", d=day, first=(i == 0), last=(i + 400 >= len(out)), force=bool(os.environ.get("NP_FORCE")), rows=out[i:i + 400])
         stored = len(out)
         print("floorsheet rows:", len(out))
     except Budget:
