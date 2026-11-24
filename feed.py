@@ -201,7 +201,7 @@ def depth_loop(symbols_fn):
                     send("depth", symbol=s, bids=side(md.get("buyMarketDepthList")), asks=side(md.get("sellMarketDepthList")))
         except Exception as e:
             print("depth failed:", repr(e))
-        time.sleep(45)
+        time.sleep(120)
 
 
 def sheet_agg():
@@ -236,7 +236,7 @@ def overlay(rows, agg):
 
 def cmd_live(until_close=False):
     """Every NP_EVERY seconds (default 3): the last trade price of each stock from today's floorsheet, on top of NEPSE's once-a-minute
-    market list. Only stocks that changed are sent, so the free database is not flooded; the whole market is sent again every 5 minutes.
+    market list. Only stocks that changed are sent, so the free database is not flooded; the whole market is saved again every 15 minutes.
     Set NP_TRADES=0 to use only the once-a-minute list."""
     every = max(1.0, float(os.environ.get("NP_EVERY", "3")))
     use_trades = os.environ.get("NP_TRADES", "1") != "0"
@@ -265,7 +265,7 @@ def cmd_live(until_close=False):
                     rows = overlay(rows, agg)
                 except Exception as e:
                     print("floorsheet skipped:", repr(e))
-            full = time.time() - full_at > 300
+            full = time.time() - full_at > 900
             out = [r for r in rows if full or seen.get(r["symbol"]) != (r["c"], r["v"])]
             for r in rows:
                 seen[r["symbol"]] = (r["c"], r["v"])
