@@ -45,6 +45,25 @@ jobs:
               print("sample:", json.dumps(rows[0], ensure_ascii=False)[:500])
           PY
           done
+      - name: Page structure (AGM list, company financials)
+        run: |
+          python3 - <<'PY'
+          import re, html, requests
+          H = {"User-Agent": "Mozilla/5.0 (compatible; SanketProbe/1.0)"}
+          def show(url, words, width=700):
+              r = requests.get(url, headers=H, timeout=30)
+              print("\n=====", url, r.status_code, len(r.text), "bytes")
+              raw = r.text
+              urls = sorted(set(re.findall(r"""["'](/[A-Za-z0-9_\-/\.]*(?:agm|ajax|json|list|data|financ|report)[A-Za-z0-9_\-/\.?=&]*)["']""", raw, re.I)))[:25]
+              print("script/ajax-looking urls:", urls)
+              t = html.unescape(re.sub(r"\s+", " ", re.sub(r"(?s)<[^>]+>", " ", re.sub(r"(?is)<(script|style)[^>]*>.*?</\\1>", " ", raw))))
+              for w in words:
+                  i = t.find(w)
+                  print("--", w, "->", t[max(0, i - 80): i + width] if i >= 0 else "not found")
+          show("https://www.sharesansar.com/agm-list", ["AGM Date", "Book Closure"])
+          show("https://www.sharesansar.com/company/nabil", ["Quarterly", "Financial", "EPS", "Net Profit"])
+          show("https://merolagani.com/CompanyDetail.aspx?symbol=NABIL", ["Quarterly", "Net Profit", "Paid Up"])
+          PY
       - name: Outside sources
         run: |
           for u in \

@@ -1,0 +1,37 @@
+name: Sanket floorsheet archive
+# Saves every trade of the day as one compressed file in this repository (kept 30 days), so Sanket can show the full floorsheet for free.
+on:
+  schedule:
+    - cron: "15 10 * * 0-4"   # 16:00 Nepal time, Sunday to Thursday
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: sanket-floorsheet
+  cancel-in-progress: false
+jobs:
+  floor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -q git+https://github.com/basic-bgnr/NepseUnofficialApi requests
+      - name: Archive the day's trades (tries again every 10 minutes until the broker numbers are out)
+        run: |
+          for i in 1 2 3 4 5 6; do
+            python -u feed.py floorarchive && exit 0
+            echo "not ready (try $i of 6), waiting 10 minutes"; sleep 600
+          done
+          exit 1
+        env:
+          NP_API: ${{ secrets.NP_API }}
+          NP_KEY: ${{ secrets.NP_KEY }}
+      - name: Save to the repository
+        run: |
+          git config user.name "sanket-bot"; git config user.email "sanket-bot@users.noreply.github.com"
+          git add -A data/floor
+          git diff --staged --quiet && echo "nothing new" && exit 0
+          git commit -qm "Floorsheet $(date -u +%F)"
+          git pull -q --rebase origin main && git push -q origin HEAD:main

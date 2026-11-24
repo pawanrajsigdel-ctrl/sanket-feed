@@ -460,6 +460,34 @@ def cmd_fundamentals():
     print("fundamentals: %d read, %d without figures%s" % (got, len(miss), (" (e.g. " + ", ".join(miss[:8]) + ")") if miss else ""))
 
 
+def cmd_floorarchive():
+    """Saves every trade of the day (symbol, buyer, seller, quantity, rate, amount, time) as one compressed file in this repository, under data/floor/.
+    The files are free to keep and are read straight from GitHub by the Sanket floorsheet view, so nothing counts against the database's daily writes.
+    The last 30 days are kept. Run it after 15:00 Nepal time, when the broker numbers have been released."""
+    import gzip
+    day = now_np().strftime("%Y-%m-%d")
+    sheet = nepse.getFloorSheet() or []
+    rows = []
+    for t in sheet:
+        s = str(pick(t, "stockSymbol", "symbol", default="")).upper()
+        if not s:
+            continue
+        rows.append([s, int(num(pick(t, "buyerMemberId", "buyerBroker"))), int(num(pick(t, "sellerMemberId", "sellerBroker"))), num(pick(t, "contractQuantity", "quantity")),
+                     num(pick(t, "contractRate", "rate")), num(pick(t, "contractAmount", "amount")), str(pick(t, "tradeTime", "contractTime", "businessDate", default=""))[-14:], str(pick(t, "contractId", "id", default=""))])
+    if len(rows) < 1000 or not any(r[1] > 0 for r in rows):
+        print("floorsheet not complete yet (%d trades, broker numbers %s); try again later" % (len(rows), "hidden" if not any(r[1] > 0 for r in rows) else "present"))
+        sys.exit(1)
+    os.makedirs("data/floor", exist_ok=True)
+    body = json.dumps({"d": day, "cols": ["symbol", "buyer", "seller", "qty", "rate", "amount", "time", "id"], "rows": rows}, separators=(",", ":"))
+    with gzip.open("data/floor/%s.json.gz" % day, "wt", encoding="utf-8", compresslevel=9) as f:
+        f.write(body)
+    days = sorted(x[:-8] for x in os.listdir("data/floor") if x.endswith(".json.gz"))
+    for old in days[:-30]:
+        os.remove("data/floor/%s.json.gz" % old)
+    json.dump({"days": days[-30:], "updated": dt.datetime.utcnow().isoformat() + "Z"}, open("data/floor/index.json", "w"))
+    print("floorsheet archived: %d trades for %s, %d days kept" % (len(rows), day, len(days[-30:])))
+
+
 def cmd_longhistory():
     """Ten years (NP_LONG_YEARS) of month-by-month lowest, highest and closing prices for every stock, from the public dataset
     github.com/Aabishkar2/nepse-data (one CSV per company, MIT licence). It feeds the pattern finder; only 120 small rows per stock are stored."""
@@ -576,4 +604,4 @@ def cmd_auto():
 
 
 if __name__ == "__main__":
-    {"probe": cmd_probe, "live": cmd_live, "close": cmd_close, "history": cmd_history, "fresh": cmd_fresh, "floor": cmd_floor, "auto": cmd_auto, "longhistory": cmd_longhistory, "fundamentals": cmd_fundamentals}.get(sys.argv[1] if len(sys.argv) > 1 else "", lambda: print(__doc__))()
+    {"probe": cmd_probe, "live": cmd_live, "close": cmd_close, "history": cmd_history, "fresh": cmd_fresh, "floor": cmd_floor, "auto": cmd_auto, "longhistory": cmd_longhistory, "fundamentals": cmd_fundamentals, "floorarchive": cmd_floorarchive}.get(sys.argv[1] if len(sys.argv) > 1 else "", lambda: print(__doc__))()
