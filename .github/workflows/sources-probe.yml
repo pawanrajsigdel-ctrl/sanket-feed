@@ -1,0 +1,43 @@
+name: Data sources test
+# Run by hand (Actions -> Data sources test -> Run workflow). Shows which free sources can give company news, announcements, earnings (EPS), IPO and dividend calendars.
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: What the NEPSE library can fetch beyond prices
+        run: |
+          pip install -q git+https://github.com/basic-bgnr/NepseUnofficialApi requests
+          python - <<'PY'
+          import re
+          from nepse import Nepse
+          n = Nepse(); n.setTLSVerification(False)
+          names = [m for m in dir(n) if m.startswith("get") and re.search(r"disclos|news|notice|alert|dividend|ipo|financ|report|event|holiday|supply|debenture|right|bonus|merge", m, re.I)]
+          print("Library methods that may help:", names)
+          for m in names:
+              try:
+                  r = getattr(n, m)()
+                  s = repr(r)
+                  print("OK  ", m, "->", (len(r) if hasattr(r, "__len__") else "?"), "items;", s[:300])
+              except TypeError as e:
+                  print("NEEDS ARGUMENT", m, "->", str(e)[:120])
+              except Exception as e:
+                  print("FAIL", m, "->", repr(e)[:160])
+          PY
+      - name: Outside sources
+        run: |
+          for u in \
+            "https://shubhamnpk.github.io/yonepse/data/proposed_dividend/history_all_years.json" \
+            "https://shubhamnpk.github.io/yonepse/data/proposed_dividend/latest_1y.json" \
+            "https://www.sharesansar.com/existing-issues" \
+            "https://merolagani.com/Floorsheet.aspx" \
+            "https://merolagani.com/CompanyDetail.aspx?symbol=NABIL" \
+            "https://www.sharesansar.com/company/nabil" \
+            "https://news.google.com/rss/search?q=%E0%A4%B6%E0%A5%87%E0%A4%AF%E0%A4%B0&hl=ne&gl=NP&ceid=NP:ne" ; do
+            printf '%s -> ' "$u"; curl -sS -m 20 -L -A "Mozilla/5.0" -o /tmp/o.txt -w "HTTP %{http_code}, %{size_download} bytes\n" "$u" || echo "unreachable"
+            head -c 300 /tmp/o.txt | tr '\n' ' '; echo; echo
+          done
