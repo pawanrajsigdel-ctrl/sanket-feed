@@ -20,3 +20,8 @@ jobs:
         env:
           NP_API: ${{ secrets.NP_API }}
           NP_KEY: ${{ secrets.NP_KEY }}
+      - run: python -u feed.py longhistory
+        if: always()
+        env:
+          NP_API: ${{ secrets.NP_API }}
+          NP_KEY: ${{ secrets.NP_KEY }}

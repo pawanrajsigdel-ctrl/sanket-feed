@@ -10,6 +10,7 @@ Commands:
     python feed.py live              every 3 seconds during market hours (set NP_EVERY to change): only changed prices are sent
     python feed.py close             after 15:00: today's prices, index, brokers, floorsheet totals, depth, then analysis
     python feed.py auto              does everything by itself every day: live, then close, then history
+    python feed.py longhistory       ten years of month-by-month prices for the pattern finder (public dataset)
     python feed.py history           one-time: price history of every stock back to 2020 (takes a while)
 
 The library is unofficial and NEPSE can change its site at any time, so every field is read through pick(), which tries the
@@ -400,6 +401,61 @@ def cmd_history():
     return "done"
 
 
+LONG_URL = "https://raw.githubusercontent.com/Aabishkar2/nepse-data/main/data/company-wise/%s.csv"
+
+
+def cmd_longhistory():
+    """Ten years (NP_LONG_YEARS) of month-by-month lowest, highest and closing prices for every stock, from the public dataset
+    github.com/Aabishkar2/nepse-data (one CSV per company, MIT licence). It feeds the pattern finder; only 120 small rows per stock are stored."""
+    import csv, io
+    years = int(os.environ.get("NP_LONG_YEARS", "10"))
+    first_ym = "%04d-%02d" % (now_np().year - years, now_np().month)
+    have = {}
+    try:
+        have = requests.get(API + "/api/np/have", timeout=30).json().get("months", {})
+    except Exception as e:
+        print("could not read what is already stored:", e)
+    sec = sectors()
+    try:
+        turn = {r["symbol"]: r["t"] for r in today_rows()}
+    except Exception:
+        turn = {}
+    order = sorted(sec, key=lambda s: (any(w in str(sec[s][1]).lower() for w in ("debenture", "mutual", "preference", "promoter", "fund")), -turn.get(s, 0), s))
+    done = 0
+    for s in order:
+        if "/" in s or (have.get(s, 0) >= years * 12 * 0.6 and not os.environ.get("NP_FORCE")):
+            continue
+        try:
+            r = requests.get(LONG_URL % s, timeout=40)
+            if r.status_code != 200:
+                continue
+            months = {}
+            for row in csv.DictReader(io.StringIO(r.text)):
+                d = str(row.get("published_date") or row.get("date") or "")[:10]
+                ym = d[:7]
+                c, hi, lo = num(row.get("close")), num(row.get("high")), num(row.get("low"))
+                if len(ym) != 7 or ym < first_ym or c <= 0:
+                    continue
+                m = months.setdefault(ym, {"symbol": s, "ym": ym, "lo": 0, "hi": 0, "c": c, "_d": ""})
+                hi, lo = hi or c, lo or c
+                m["hi"] = max(m["hi"], hi); m["lo"] = lo if not m["lo"] else min(m["lo"], lo)
+                if d >= m["_d"]:
+                    m["_d"], m["c"] = d, c
+            rows = [{k: v for k, v in m.items() if k != "_d"} for m in sorted(months.values(), key=lambda m: m["ym"])]
+            for i in range(0, len(rows), 400):
+                send("monthly", rows=rows[i:i + 400])
+            done += 1
+            print(s, len(rows), "months")
+        except Budget:
+            print("Today's write budget is used up; the rest continues tomorrow.")
+            return "budget"
+        except Exception as e:
+            print(s, "failed:", repr(e))
+        time.sleep(0.2)
+    print("Long history finished for", done, "stocks this run.")
+    return "done"
+
+
 def cmd_auto():
     """Runs by itself, every day, with nothing to press: live prices while the market is open (Sunday to Thursday 11:00-15:00), then the daily close
     (retried every 5 minutes until NEPSE releases the broker numbers), then the price history until the day's free budget is used."""
@@ -443,4 +499,4 @@ def cmd_auto():
 
 
 if __name__ == "__main__":
-    {"probe": cmd_probe, "live": cmd_live, "close": cmd_close, "history": cmd_history, "fresh": cmd_fresh, "floor": cmd_floor, "auto": cmd_auto}.get(sys.argv[1] if len(sys.argv) > 1 else "", lambda: print(__doc__))()
+    {"probe": cmd_probe, "live": cmd_live, "close": cmd_close, "history": cmd_history, "fresh": cmd_fresh, "floor": cmd_floor, "auto": cmd_auto, "longhistory": cmd_longhistory}.get(sys.argv[1] if len(sys.argv) > 1 else "", lambda: print(__doc__))()
