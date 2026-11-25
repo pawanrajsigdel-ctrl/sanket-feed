@@ -460,6 +460,63 @@ def cmd_fundamentals():
     print("fundamentals: %d read, %d without figures%s" % (got, len(miss), (" (e.g. " + ", ".join(miss[:8]) + ")") if miss else ""))
 
 
+def parse_events_page(html):
+    """Event headlines from one day of the public events calendar: the linked headlines first; if the page has no such links, the lines that sit in front of a date."""
+    import re, html as H
+    out, seen = [], set()
+    for m in re.finditer(r"(?is)<a\b[^>]*href=[\"']([^\"']*eventdetail/[^\"']+)[\"'][^>]*>(.*?)</a>", html):
+        t = re.sub(r"\s+", " ", H.unescape(re.sub(r"(?s)<[^>]+>", " ", m.group(2)))).strip()
+        if len(t) >= 6 and t not in seen:
+            seen.add(t); u = m.group(1); out.append({"title": t, "url": ("https://www.sharesansar.com" + u) if u.startswith("/") else u})
+    if out:
+        return out
+    h = re.sub(r"(?is)<(script|style|noscript)[^>]*>.*?</\1>", " ", html)
+    txt = re.sub(r"\s+", " ", H.unescape(re.sub(r"(?s)<[^>]+>", " ", h)))
+    i = txt.find("Financial Events")
+    txt = txt[i + len("Financial Events"):] if i >= 0 else txt
+    for m in re.finditer(r"([A-Z0-9][^|]{8,220}?)\s+(?:Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday), [A-Z][a-z]+ \d{1,2}, \d{4}", txt):
+        t = m.group(1).strip()
+        if t not in seen and not t.lower().startswith(("home", "login")):
+            seen.add(t); out.append({"title": t, "url": ""})
+    return out
+
+
+def cmd_events():
+    """Calendar of AGM days, book-close dates, right shares, IPOs, auctions and listings, one page per day from the public events calendar.
+    `python feed.py events` reads from 7 days ago to 75 days ahead (daily run); `events 400` reads 400 days back too (one-off, to fill in the past);
+    add `dry` to only print what is read and store nothing."""
+    args = [a for a in sys.argv[2:]]
+    dry = "dry" in args
+    nums = [int(a) for a in args if a.isdigit()]
+    back = nums[0] if nums else 7
+    ahead = nums[1] if len(nums) > 1 else 75
+    today = now_np().date()
+    batch, pages, total, empty = [], 0, 0, 0
+    for off in range(-back, ahead + 1):
+        d = (today + dt.timedelta(days=off)).isoformat()
+        try:
+            r = requests.get("https://www.sharesansar.com/events/" + d, headers={"User-Agent": "Mozilla/5.0 (compatible; SanketFeed/1.0)"}, timeout=25)
+            ev = parse_events_page(r.text) if r.status_code == 200 else []
+            if r.status_code != 200:
+                print("  ! %s HTTP %s" % (d, r.status_code))
+        except Exception as e:
+            ev = []
+            print("  ! %s: %r" % (d, e))
+        pages += 1
+        if not ev:
+            empty += 1
+        for e in ev:
+            batch.append({"d": d, "title": e["title"], "url": e.get("url", "")}); total += 1
+        if (dry and pages <= 3) or (not dry and pages == 1):
+            print("  %s -> %d events%s" % (d, len(ev), "; e.g. " + " | ".join(x["title"][:70] for x in ev[:3]) if ev else ""))
+        if len(batch) >= 150 and not dry:
+            send("events", rows=batch); batch = []
+        time.sleep(0.6)
+    if batch and not dry:
+        send("events", rows=batch)
+    print("events: %d days read, %d events%s, %d days without events" % (pages, total, " (dry run, nothing stored)" if dry else " stored", empty))
+
+
 def cmd_floorarchive():
     """Saves every trade of the day (symbol, buyer, seller, quantity, rate, amount, time) as one compressed file in this repository, under data/floor/.
     The files are free to keep and are read straight from GitHub by the Sanket floorsheet view, so nothing counts against the database's daily writes.
@@ -604,4 +661,4 @@ def cmd_auto():
 
 
 if __name__ == "__main__":
-    {"probe": cmd_probe, "live": cmd_live, "close": cmd_close, "history": cmd_history, "fresh": cmd_fresh, "floor": cmd_floor, "auto": cmd_auto, "longhistory": cmd_longhistory, "fundamentals": cmd_fundamentals, "floorarchive": cmd_floorarchive}.get(sys.argv[1] if len(sys.argv) > 1 else "", lambda: print(__doc__))()
+    {"probe": cmd_probe, "live": cmd_live, "close": cmd_close, "history": cmd_history, "fresh": cmd_fresh, "floor": cmd_floor, "auto": cmd_auto, "longhistory": cmd_longhistory, "fundamentals": cmd_fundamentals, "floorarchive": cmd_floorarchive, "events": cmd_events}.get(sys.argv[1] if len(sys.argv) > 1 else "", lambda: print(__doc__))()

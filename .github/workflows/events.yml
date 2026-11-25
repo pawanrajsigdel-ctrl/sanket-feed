@@ -1,0 +1,36 @@
+name: Sanket events calendar
+# Reads the public events calendar (AGM days, book-close dates, right shares, IPOs, auctions) one day at a time and stores it for the Sanket calendar.
+# Runs every day. To fill in the past once: Run workflow with back = 400.
+on:
+  schedule:
+    - cron: "40 5 * * *"   # about 11:25 Nepal time, every day
+  workflow_dispatch:
+    inputs:
+      back:
+        description: "Days into the past to read (7 is the daily default; 400 fills in the past year)"
+        required: false
+        default: "7"
+      ahead:
+        description: "Days ahead to read"
+        required: false
+        default: "75"
+      dry:
+        description: "Type dry to only print what is read and store nothing"
+        required: false
+        default: ""
+concurrency:
+  group: sanket-events
+  cancel-in-progress: false
+jobs:
+  events:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -q git+https://github.com/basic-bgnr/NepseUnofficialApi requests
+      - run: python -u feed.py events ${{ github.event.inputs.back || '7' }} ${{ github.event.inputs.ahead || '75' }} ${{ github.event.inputs.dry }}
+        env:
+          NP_API: ${{ secrets.NP_API }}
+          NP_KEY: ${{ secrets.NP_KEY }}

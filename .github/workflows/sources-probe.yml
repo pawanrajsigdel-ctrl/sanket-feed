@@ -56,12 +56,19 @@ jobs:
               raw = r.text
               urls = sorted(set(re.findall(r"""["'](/[A-Za-z0-9_\-/\.]*(?:agm|ajax|json|list|data|financ|report)[A-Za-z0-9_\-/\.?=&]*)["']""", raw, re.I)))[:25]
               print("script/ajax-looking urls:", urls)
+              calls = sorted(set(re.findall(r"""(?:url|ajax|href)\s*[:(=]\s*["']([^"']*(?:ajax|json|load|fetch|get|list|data|report|nav|quarter)[^"']*)["']""", raw, re.I)))[:30]
+              print("ajax calls in page scripts:", calls)
+              for mm in list(re.finditer(r"(?is)(\$\(.{0,60}\)\.DataTable|\.ajax\(|\$\.(?:get|post)\()", raw))[:4]:
+                  print("  script near:", re.sub(r"\s+", " ", raw[mm.start(): mm.start() + 380]))
               t = html.unescape(re.sub(r"\s+", " ", re.sub(r"(?s)<[^>]+>", " ", re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", raw))))
               for w in words:
                   i = t.find(w)
                   print("--", w, "->", t[max(0, i - 80): i + width] if i >= 0 else "not found")
           show("https://www.sharesansar.com/agm-list", ["AGM Date", "Book Closure"])
           show("https://www.sharesansar.com/company/nabil", ["Quarterly", "Financial", "EPS", "Net Profit"])
+          show("https://www.sharesansar.com/mutual-fund-navs", ["NAV", "Fund", "Open End"])
+          import datetime
+          show("https://www.sharesansar.com/events/" + (datetime.date.today() + datetime.timedelta(days=1)).isoformat(), ["Book Closure", "AGM", "Financial Events"])
           show("https://merolagani.com/CompanyDetail.aspx?symbol=NABIL", ["Quarterly", "Net Profit", "Paid Up"])
           PY
       - name: Outside sources
