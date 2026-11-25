@@ -1,0 +1,38 @@
+name: Sanket floorsheet past days
+# Fills in earlier trading days of the floorsheet archive (NEPSE gives an earlier day one company at a time, so each day takes a few minutes).
+# Run it by hand: days = how many missing trading days to add (newest first). Run it again to go further back. Days already saved are skipped.
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "How many past trading days to add"
+        required: false
+        default: "10"
+permissions:
+  contents: write
+concurrency:
+  group: sanket-floorsheet
+  cancel-in-progress: false
+jobs:
+  back:
+    runs-on: ubuntu-latest
+    timeout-minutes: 345
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -q git+https://github.com/basic-bgnr/NepseUnofficialApi requests
+      - name: Read the past days (stops by itself before the time limit)
+        run: python -u feed.py floorback ${{ github.event.inputs.days || '10' }}
+        env:
+          NP_API: ${{ secrets.NP_API }}
+          NP_KEY: ${{ secrets.NP_KEY }}
+          NP_BUDGET_MIN: "320"
+      - name: Save to the repository
+        if: always()
+        run: |
+          git config user.name "sanket-bot"; git config user.email "sanket-bot@users.noreply.github.com"
+          git add -A data/floor
+          git diff --staged --quiet && echo "nothing new" && exit 0
+          git commit -qm "Floorsheet past days $(date -u +%F)"
+          git pull -q --rebase origin main && git push -q origin HEAD:main

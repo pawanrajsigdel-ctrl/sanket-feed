@@ -517,20 +517,156 @@ def cmd_events():
     print("events: %d days read, %d events%s, %d days without events" % (pages, total, " (dry run, nothing stored)" if dry else " stored", empty))
 
 
+FLOOR_KEEP = 120
+
+
+def floor_index():
+    """Rewrites data/floor/index.json from the day files present (newest FLOOR_KEEP kept) and returns the list of days."""
+    days = sorted(x[:-8] for x in os.listdir("data/floor") if x.endswith(".json.gz") and len(x) == 18)
+    for old in days[:-FLOOR_KEEP]:
+        os.remove("data/floor/%s.json.gz" % old)
+    days = days[-FLOOR_KEEP:]
+    json.dump({"days": days, "updated": dt.datetime.utcnow().isoformat() + "Z"}, open("data/floor/index.json", "w"))
+    return days
+
+
+def hhmmss(v):
+    t = str(v or "")
+    t = t.split("T")[-1] if "T" in t else t.split(" ")[-1]
+    return t[:8]
+
+
+def floor_row(t, fallback=""):
+    s = str(pick(t, "stockSymbol", "symbol", default=fallback) or fallback).upper()
+    return [s, int(num(pick(t, "buyerMemberId", "buyerBroker"))), int(num(pick(t, "sellerMemberId", "sellerBroker"))), num(pick(t, "contractQuantity", "quantity")),
+            num(pick(t, "contractRate", "rate")), num(pick(t, "contractAmount", "amount")), hhmmss(pick(t, "tradeTime", "contractTime", "businessDate", default="")), str(pick(t, "contractId", "id", default=""))]
+
+
+def cmd_floorback():
+    """Fills in past days of the floorsheet archive. NEPSE serves the floorsheet of an earlier date one company at a time, so each missing trading day takes
+    one request per company (a few minutes). `python feed.py floorback 10` fills the 10 most recent missing trading days, newest first, and stops early when time runs out.
+    Run it again to continue; days already saved are skipped."""
+    import gzip
+    want = int((sys.argv[2:] or ["10"])[0])
+    budget = float(os.environ.get("NP_BUDGET_MIN", "300")) * 60
+    t0 = time.time()
+    os.makedirs("data/floor", exist_ok=True)
+    have = set(x[:-8] for x in os.listdir("data/floor") if x.endswith(".json.gz"))
+    syms = sorted(s for s in sectors() if "/" not in s)
+    print("%d companies; %d days already saved" % (len(syms), len(have)))
+    today = now_np().date()
+    done = 0
+    for back in range(1, 400):
+        d = today - dt.timedelta(days=back)
+        if d.weekday() in (4, 5) or d.isoformat() in have:  # Friday and Saturday are closed
+            continue
+        if done >= want or time.time() - t0 > budget:
+            break
+        ds = d.isoformat()
+        busy = 0
+        for probe in ("NABIL", "NICA", "NTC", "HRL", "SBL"):
+            if probe in syms:
+                try:
+                    if nepse.getFloorSheetOf(probe, ds):
+                        busy = 1
+                        break
+                except Exception as e:
+                    print("  probe %s %s failed: %r" % (probe, ds, e))
+        if not busy:
+            print("%s: no trades (holiday or too old), skipped" % ds)
+            have.add(ds)
+            continue
+        rows, bad = [], 0
+        for s in syms:
+            if time.time() - t0 > budget:
+                break
+            for attempt in range(3):
+                try:
+                    for t in nepse.getFloorSheetOf(s, ds) or []:
+                        rows.append(floor_row(t, s))
+                    break
+                except Exception as e:
+                    if attempt == 2:
+                        bad += 1
+                    time.sleep(1.5)
+        if time.time() - t0 > budget:
+            print("%s: out of time before every company was read; day not saved" % ds)
+            break
+        if len(rows) < 500 or bad > 25:
+            print("%s: only %d trades, %d companies failed; day not saved" % (ds, len(rows), bad))
+            continue
+        body = json.dumps({"d": ds, "cols": ["symbol", "buyer", "seller", "qty", "rate", "amount", "time", "id"], "rows": rows}, separators=(",", ":"))
+        with gzip.open("data/floor/%s.json.gz" % ds, "wt", encoding="utf-8", compresslevel=9) as f:
+            f.write(body)
+        have.add(ds)
+        done += 1
+        floor_index()
+        print("%s: %d trades saved (%d companies failed); %d of %d days done, %.0f min used" % (ds, len(rows), bad, done, want, (time.time() - t0) / 60))
+    kept = floor_index()
+    print("floorback finished: %d days added, %d days in the archive" % (done, len(kept)))
+
+
+def find_key(o, names):
+    """First value found under any of the given (lower-case) key names, searching nested dictionaries."""
+    if isinstance(o, dict):
+        for k, v in o.items():
+            if str(k).lower() in names and v not in (None, ""):
+                return v
+        for v in o.values():
+            r = find_key(v, names)
+            if r is not None:
+                return r
+    elif isinstance(o, list):
+        for v in o:
+            r = find_key(v, names)
+            if r is not None:
+                return r
+    return None
+
+
+def cmd_shares():
+    """Promoter and public shares of every company, from the exchange's own company details. `python feed.py shares NABIL` prints one company's raw fields to check."""
+    only = [a.upper() for a in sys.argv[2:]]
+    syms = only or sorted(s for s in sectors() if "/" not in s)
+    rows, miss, shown = [], [], 0
+    for s in syms:
+        try:
+            d = nepse.getCompanyDetails(s)
+        except Exception:
+            miss.append(s)
+            continue
+        if only or shown == 0:
+            sec = d.get("security") if isinstance(d, dict) and isinstance(d.get("security"), dict) else d
+            print("  %s fields: %s" % (s, sorted(sec.keys())[:60] if isinstance(sec, dict) else type(d).__name__))
+            shown += 1
+        p = num(find_key(d, {"promotershares"}))
+        u = num(find_key(d, {"publicshares"}))
+        li = num(find_key(d, {"stocklistedshares", "listedshares"}))
+        if p > 0 or u > 0:
+            rows.append({"symbol": s, "promoter": p, "public": u, "listed": li or p + u})
+            if only or len(rows) <= 3:
+                print("  %s -> promoter %s, public %s, listed %s" % (s, p, u, li))
+        else:
+            miss.append(s)
+        time.sleep(0.15)
+    if rows and not only:
+        for i in range(0, len(rows), 150):
+            send("shares", rows=rows[i:i + 150])
+    print("shares: %d companies with a split%s, %d without (e.g. %s)" % (len(rows), " (check only, nothing stored)" if only else " stored", len(miss), ", ".join(miss[:6])))
+
+
 def cmd_floorarchive():
     """Saves every trade of the day (symbol, buyer, seller, quantity, rate, amount, time) as one compressed file in this repository, under data/floor/.
     The files are free to keep and are read straight from GitHub by the Sanket floorsheet view, so nothing counts against the database's daily writes.
-    The last 30 days are kept. Run it after 15:00 Nepal time, when the broker numbers have been released."""
+    The last 120 days are kept. Run it after 15:00 Nepal time, when the broker numbers have been released."""
     import gzip
     day = now_np().strftime("%Y-%m-%d")
     sheet = nepse.getFloorSheet() or []
     rows = []
     for t in sheet:
-        s = str(pick(t, "stockSymbol", "symbol", default="")).upper()
-        if not s:
-            continue
-        rows.append([s, int(num(pick(t, "buyerMemberId", "buyerBroker"))), int(num(pick(t, "sellerMemberId", "sellerBroker"))), num(pick(t, "contractQuantity", "quantity")),
-                     num(pick(t, "contractRate", "rate")), num(pick(t, "contractAmount", "amount")), str(pick(t, "tradeTime", "contractTime", "businessDate", default=""))[-14:], str(pick(t, "contractId", "id", default=""))])
+        r = floor_row(t)
+        if r[0]:
+            rows.append(r)
     if len(rows) < 1000 or not any(r[1] > 0 for r in rows):
         print("floorsheet not complete yet (%d trades, broker numbers %s); try again later" % (len(rows), "hidden" if not any(r[1] > 0 for r in rows) else "present"))
         sys.exit(1)
@@ -538,11 +674,8 @@ def cmd_floorarchive():
     body = json.dumps({"d": day, "cols": ["symbol", "buyer", "seller", "qty", "rate", "amount", "time", "id"], "rows": rows}, separators=(",", ":"))
     with gzip.open("data/floor/%s.json.gz" % day, "wt", encoding="utf-8", compresslevel=9) as f:
         f.write(body)
-    days = sorted(x[:-8] for x in os.listdir("data/floor") if x.endswith(".json.gz"))
-    for old in days[:-30]:
-        os.remove("data/floor/%s.json.gz" % old)
-    json.dump({"days": days[-30:], "updated": dt.datetime.utcnow().isoformat() + "Z"}, open("data/floor/index.json", "w"))
-    print("floorsheet archived: %d trades for %s, %d days kept" % (len(rows), day, len(days[-30:])))
+    kept = floor_index()
+    print("floorsheet archived: %d trades for %s, %d days kept" % (len(rows), day, len(kept)))
 
 
 def cmd_longhistory():
@@ -661,4 +794,4 @@ def cmd_auto():
 
 
 if __name__ == "__main__":
-    {"probe": cmd_probe, "live": cmd_live, "close": cmd_close, "history": cmd_history, "fresh": cmd_fresh, "floor": cmd_floor, "auto": cmd_auto, "longhistory": cmd_longhistory, "fundamentals": cmd_fundamentals, "floorarchive": cmd_floorarchive, "events": cmd_events}.get(sys.argv[1] if len(sys.argv) > 1 else "", lambda: print(__doc__))()
+    {"probe": cmd_probe, "live": cmd_live, "close": cmd_close, "history": cmd_history, "fresh": cmd_fresh, "floor": cmd_floor, "auto": cmd_auto, "longhistory": cmd_longhistory, "fundamentals": cmd_fundamentals, "floorarchive": cmd_floorarchive, "events": cmd_events, "floorback": cmd_floorback, "shares": cmd_shares}.get(sys.argv[1] if len(sys.argv) > 1 else "", lambda: print(__doc__))()

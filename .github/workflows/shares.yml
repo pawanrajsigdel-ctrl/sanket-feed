@@ -1,0 +1,27 @@
+name: Sanket promoter and public shares
+# Reads how many shares are promoter shares and how many are public for every company, from the exchange's own company details. Runs every Sunday.
+on:
+  schedule:
+    - cron: "30 6 * * 0"   # about 12:15 Nepal time on Sunday
+  workflow_dispatch:
+    inputs:
+      check:
+        description: "Only print what is read for these symbols, e.g. NABIL UPPER (nothing is stored). Leave empty to store all."
+        required: false
+        default: ""
+concurrency:
+  group: sanket-shares
+  cancel-in-progress: false
+jobs:
+  shares:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -q git+https://github.com/basic-bgnr/NepseUnofficialApi requests
+      - run: python -u feed.py shares ${{ github.event.inputs.check }}
+        env:
+          NP_API: ${{ secrets.NP_API }}
+          NP_KEY: ${{ secrets.NP_KEY }}
