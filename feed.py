@@ -726,9 +726,9 @@ def cmd_mfnav():
             print(day, "no NAV table found (%d rows) %s" % (len(rows), u))
             continue
         label = rows[0]["label"]
-        if (label, day[:4]) in used:
+        if day in used:
             continue
-        used.add((label, day[:4]))
+        used.add(day)
         print("%s: %s, %d funds (%s)" % (day, label, len(rows), u))
         if not dry:
             for i in range(0, len(rows), 100):
