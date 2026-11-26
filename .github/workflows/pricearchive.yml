@@ -1,0 +1,43 @@
+name: Sanket full price archive
+# Saves every stock's daily prices from the first day the open datasets have (1995 for the oldest, 372 stocks) and every index from 1997
+# as small files: data/prices/<SYMBOL>.json.gz and data/index/<CODE>.json.gz. About 11 MB in all. Safe to run again (it rewrites the same files);
+# it also runs every Sunday to pick up new days.
+on:
+  schedule:
+    - cron: "20 7 * * 0"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: sanket-pricearchive
+  cancel-in-progress: false
+jobs:
+  prices:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -q requests git+https://github.com/basic-bgnr/NepseUnofficialApi
+      - name: Download the open datasets
+        run: |
+          git clone -q --depth 1 https://github.com/Aabishkar2/nepse-data.git "$RUNNER_TEMP/aab"
+          git clone -q --depth 1 https://github.com/menaceXnadin/nepse-historical-market-data-csv.git "$RUNNER_TEMP/men"
+      - name: Build the archive
+        run: python -u feed.py pricehist "$RUNNER_TEMP/aab" "$RUNNER_TEMP/men"
+        env:
+          NP_API: ${{ secrets.NP_API }}
+          NP_KEY: ${{ secrets.NP_KEY }}
+      - name: Save to the repository
+        run: |
+          git config user.name "sanket-bot"; git config user.email "sanket-bot@users.noreply.github.com"
+          git add -A data/prices data/index
+          git diff --staged --quiet && echo "nothing new" && exit 0
+          git commit -qm "Price archive $(date -u +%F)"
+          for i in 1 2 3 4 5; do
+            git pull -q --rebase -X theirs origin main && git push -q origin HEAD:main && echo "saved" && exit 0
+            git rebase --abort 2>/dev/null || true
+            sleep 8
+          done
+          echo "could not save"; exit 1

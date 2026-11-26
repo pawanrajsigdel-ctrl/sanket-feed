@@ -793,6 +793,60 @@ def cmd_flowhist():
     print("flowhist finished; %d stock-year files in data/flow" % total)
 
 
+def cmd_pricehist():
+    """All daily prices from the open datasets, kept in this repo as small files: data/prices/<SYMBOL>.json.gz (every stock, from the first day the dataset has,
+    1995 for the oldest) and data/index/<CODE>.json.gz (NEPSE, float, sensitive and every sector index, from 1997).
+    `python feed.py pricehist <folder of nepse-data> <folder of nepse-historical-market-data-csv>`; the workflow downloads both folders first."""
+    import csv, gzip, re
+    a = [x for x in sys.argv[2:] if not x.isdigit()]
+    aab, men = (a + ["", ""])[:2]
+    os.makedirs("data/prices", exist_ok=True); os.makedirs("data/index", exist_ok=True)
+    safe = lambda sy: re.sub(r"[^A-Z0-9_.-]", "_", sy)
+    num = lambda v: (None if str(v).strip().lower() in ("", "nan", "none") else float(v))
+    n = rows_total = 0
+    for f in sorted(os.listdir(os.path.join(aab, "data/company-wise"))) if aab else []:
+        if not f.endswith(".csv"):
+            continue
+        sy = f[:-4].upper(); out = []; prev = None
+        for t in csv.DictReader(open(os.path.join(aab, "data/company-wise", f), encoding="utf-8")):
+            try:
+                d = t["published_date"][:10]; o, h, l, c = (num(t[k]) for k in ("open", "high", "low", "close"))
+            except Exception:
+                continue
+            if not d or c is None:
+                continue
+            chg = num(t.get("per_change"))
+            if chg is None and prev:
+                chg = round((c / prev - 1) * 100, 2)
+            out.append([d, o, h, l, c, chg if chg is not None else 0, int(num(t.get("traded_quantity")) or 0), round(num(t.get("traded_amount")) or 0)])
+            prev = c
+        out.sort(key=lambda r: r[0])
+        if out:
+            with gzip.open("data/prices/%s.json.gz" % safe(sy), "wt", encoding="utf-8", compresslevel=9) as g:
+                json.dump({"s": sy, "cols": ["d", "o", "h", "l", "c", "chg", "qty", "amt"], "rows": out}, g, separators=(",", ":"))
+            n += 1; rows_total += len(out)
+    print("prices: %d stocks, %d rows, first day %s" % (n, rows_total, min([json.load(gzip.open("data/prices/" + x, "rt"))["rows"][0][0] for x in os.listdir("data/prices")] or [""])))
+    k = 0
+    for folder in ("index", "subindices") if men else ():
+        d0 = os.path.join(men, "data", folder, "adjusted")
+        for f in sorted(os.listdir(d0)) if os.path.isdir(d0) else []:
+            if not f.endswith("_adjusted.csv"):
+                continue
+            code = f[:-13].upper(); out = []
+            for t in csv.DictReader(open(os.path.join(d0, f), encoding="utf-8")):
+                try:
+                    out.append([t["time"][:10], num(t["open"]), num(t["high"]), num(t["low"]), num(t["close"]), int(num(t.get("volume")) or 0)])
+                except Exception:
+                    continue
+            out.sort(key=lambda r: r[0])
+            if out:
+                with gzip.open("data/index/%s.json.gz" % safe(code), "wt", encoding="utf-8", compresslevel=9) as g:
+                    json.dump({"s": code, "cols": ["d", "o", "h", "l", "c", "vol"], "rows": out}, g, separators=(",", ":"))
+                k += 1
+                print("  index %s: %d days from %s" % (code, len(out), out[0][0]))
+    print("price history finished: %d stocks, %d indices" % (n, k))
+
+
 def find_key(o, names):
     """First value found under any of the given (lower-case) key names, searching nested dictionaries."""
     if isinstance(o, dict):
@@ -983,4 +1037,4 @@ def cmd_auto():
 
 
 if __name__ == "__main__":
-    {"probe": cmd_probe, "live": cmd_live, "close": cmd_close, "history": cmd_history, "fresh": cmd_fresh, "floor": cmd_floor, "auto": cmd_auto, "longhistory": cmd_longhistory, "fundamentals": cmd_fundamentals, "floorarchive": cmd_floorarchive, "events": cmd_events, "floorback": cmd_floorback, "openhist": cmd_openhist, "mfnav": cmd_mfnav, "flowhist": cmd_flowhist, "shares": cmd_shares}.get(sys.argv[1] if len(sys.argv) > 1 else "", lambda: print(__doc__))()
+    {"probe": cmd_probe, "live": cmd_live, "close": cmd_close, "history": cmd_history, "fresh": cmd_fresh, "floor": cmd_floor, "auto": cmd_auto, "longhistory": cmd_longhistory, "fundamentals": cmd_fundamentals, "floorarchive": cmd_floorarchive, "events": cmd_events, "floorback": cmd_floorback, "openhist": cmd_openhist, "mfnav": cmd_mfnav, "flowhist": cmd_flowhist, "pricehist": cmd_pricehist, "shares": cmd_shares}.get(sys.argv[1] if len(sys.argv) > 1 else "", lambda: print(__doc__))()
