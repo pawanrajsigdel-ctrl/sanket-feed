@@ -732,28 +732,29 @@ def flow_day(text):
 
 
 def cmd_flowhist():
-    """Whole history of who bought and sold each stock, from the open floorsheet dataset (2015 onwards), kept small: one file per stock in data/flow/
-    with one line per trading day (trades, shares, turnover, high, low and the top 5 buying and selling brokers).
+    """Whole history of who bought and sold each stock, from the open floorsheet dataset (2015 onwards), kept small: one file per stock and year in data/flow/<year>/
+    with one line per trading day (trades, shares, turnover, high, low and the top 5 buying and selling brokers), in one folder per year.
     `python feed.py flowhist 2025` does one year; `flowhist 2023 2026` does 2023 to 2026. Days already saved are skipped, so it can be run again."""
     import gzip, re
     from concurrent.futures import ThreadPoolExecutor
     a = [int(x) for x in sys.argv[2:] if x.isdigit()]
     y0, y1 = (a[0], a[1] if len(a) > 1 else a[0]) if a else (now_np().year, now_np().year)
-    os.makedirs("data/flow", exist_ok=True)
     cols = ["d", "trades", "qty", "amount", "hi", "lo", "buyers", "sellers"]
-    fname = lambda sy: "data/flow/%s.json.gz" % re.sub(r"[^A-Z0-9_.-]", "_", sy)
-    def load(sy):
-        f = fname(sy)
+    # One folder per year (data/flow/<year>/<SYMBOL>.json.gz), so runs for different years never touch the same files.
+    fname = lambda sy, yr: "data/flow/%d/%s.json.gz" % (yr, re.sub(r"[^A-Z0-9_.-]", "_", sy))
+    def load(sy, yr):
+        f = fname(sy, yr)
         if os.path.exists(f):
             try:
                 return {r[0]: r for r in json.load(gzip.open(f, "rt", encoding="utf-8"))["rows"]}
             except Exception:
                 pass
         return {}
-    done_f = "data/flow/_days.json"
-    done = set(json.load(open(done_f))) if os.path.exists(done_f) else set()
     today = now_np().date()
     for year in range(y0, y1 + 1):
+        os.makedirs("data/flow/%d" % year, exist_ok=True)
+        done_f = "data/flow/%d/_days.json" % year
+        done = set(json.load(open(done_f))) if os.path.exists(done_f) else set()
         days = []
         d = dt.date(year, 1, 1)
         while d.year == year and d <= today:
@@ -783,12 +784,13 @@ def cmd_flowhist():
                     for sy, v in res.items():
                         fresh.setdefault(sy, {})[ds] = [ds] + v
         for sy, rows in fresh.items():
-            cur = load(sy); cur.update(rows)
-            with gzip.open(fname(sy), "wt", encoding="utf-8", compresslevel=9) as f:
-                json.dump({"s": sy, "cols": cols, "rows": [cur[k] for k in sorted(cur)]}, f, separators=(",", ":"))
+            cur = load(sy, year); cur.update(rows)
+            with gzip.open(fname(sy, year), "wt", encoding="utf-8", compresslevel=9) as f:
+                json.dump({"s": sy, "y": year, "cols": cols, "rows": [cur[k] for k in sorted(cur)]}, f, separators=(",", ":"))
         json.dump(sorted(done), open(done_f, "w"))
-        print("%d finished: %d stocks updated" % (year, len(fresh)))
-    print("flowhist finished; %d days stored, %d stock files" % (len(done), len([x for x in os.listdir("data/flow") if x.endswith(".gz")])))
+        print("%d finished: %d days read, %d stocks updated" % (year, len(days), len(fresh)))
+    total = sum(len([x for x in os.listdir("data/flow/" + yd) if x.endswith(".gz")]) for yd in os.listdir("data/flow") if os.path.isdir("data/flow/" + yd))
+    print("flowhist finished; %d stock-year files in data/flow" % total)
 
 
 def find_key(o, names):

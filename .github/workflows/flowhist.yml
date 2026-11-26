@@ -1,6 +1,7 @@
 name: Sanket broker history (all years)
 # Builds the whole history of who bought and sold each stock (2015 onwards) from the open floorsheet dataset, in small files: data/flow/<SYMBOL>.json.gz.
 # One line per stock per trading day: trades, shares, turnover, high, low and the top 5 buying and selling brokers. About 25 KB per trading day in total.
+# Files are kept per year (data/flow/<year>/), so runs for different years never clash. Always start a NEW run with Run workflow (do not use Re-run on an old run).
 # By hand: from_year and to_year. Start with 2024 to 2026, then run older years (2020 to 2023, 2015 to 2019). Safe to run again; saved days are skipped.
 on:
   workflow_dispatch:
@@ -39,4 +40,10 @@ jobs:
           git add -A data/flow
           git diff --staged --quiet && echo "nothing new" && exit 0
           git commit -qm "Broker history ${{ github.event.inputs.from_year }}-${{ github.event.inputs.to_year }}"
-          git pull -q --rebase origin main && git push -q origin HEAD:main
+          # Every year has its own folder, so another run's files never clash with these. Try a few times in case another job saved at the same moment.
+          for i in 1 2 3 4 5; do
+            git pull -q --rebase -X theirs origin main && git push -q origin HEAD:main && echo "saved" && exit 0
+            git rebase --abort 2>/dev/null || true
+            sleep 8
+          done
+          echo "could not save"; exit 1
