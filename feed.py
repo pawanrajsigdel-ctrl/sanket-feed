@@ -638,6 +638,78 @@ def cmd_openhist():
     print("open history import finished")
 
 
+def parse_mfnav(html):
+    """Rows of the monthly mutual fund NAV table: [{symbol, name, label, nav, prev}]. The table header reads 'NAV as of <month>' then 'NAV as of <previous month>'."""
+    import re, html as H
+    out, label = [], ""
+    m = re.search(r"NAV as of\s+([A-Za-z]+)", H.unescape(re.sub(r"(?s)<[^>]+>", " ", html)))
+    if m:
+        label = m.group(1)
+    for tr in re.findall(r"(?is)<tr\b.*?</tr>", html):
+        cells = [re.sub(r"\s+", " ", H.unescape(re.sub(r"(?s)<[^>]+>", " ", c))).strip() for c in re.findall(r"(?is)<t[dh]\b[^>]*>(.*?)</t[dh]>", tr)]
+        if len(cells) < 5:
+            continue
+        for i, c in enumerate(cells):
+            if re.fullmatch(r"[A-Z][A-Z0-9]{2,9}", c) and i + 2 < len(cells):
+                try:
+                    nav, prev = float(cells[i + 1].replace(",", "")), float(cells[i + 2].replace(",", ""))
+                except ValueError:
+                    break
+                if nav > 0:
+                    out.append({"symbol": c, "name": cells[i - 1] if i else "", "label": label, "nav": nav, "prev": prev})
+                break
+    return out
+
+
+def cmd_mfnav():
+    """Monthly NAV per unit of every mutual fund, from the public monthly mutual fund analysis articles.
+    `python feed.py mfnav` reads the newest 2 articles; `mfnav 12` the newest 12 (one-off, fills in the past); add `dry` to print only."""
+    import re
+    args = sys.argv[2:]
+    dry = "dry" in args
+    nums = [int(a) for a in args if a.isdigit()]
+    want = nums[0] if nums else 2
+    H = {"User-Agent": "Mozilla/5.0 (compatible; SanketFeed/1.0)"}
+    links, seen = [], set()
+    for page in ("https://www.sharesansar.com/category/mutual-fund", "https://www.sharesansar.com/category/mutual-fund?page=2", "https://www.sharesansar.com/category/mutual-fund?page=3", "https://www.sharesansar.com/category/mutual-fund?page=4", "https://www.sharesansar.com/category/mutual-fund?page=5", "https://www.sharesansar.com/category/mutual-fund?page=6"):
+        try:
+            r = requests.get(page, headers=H, timeout=30)
+        except Exception as e:
+            print("list page failed:", repr(e))
+            continue
+        print(page, "->", r.status_code, len(r.text))
+        for u in re.findall(r"""href=["']([^"']*newsdetail/[^"']+)["']""", r.text):
+            if u not in seen and re.search(r"(perform|nav-changes|monthly-analysis|mutual-fund-trends|mutual-funds?-in|insights)", u) and re.search(r"\d{4}-\d{2}-\d{2}", u):
+                seen.add(u); links.append(u if u.startswith("http") else "https://www.sharesansar.com" + u)
+        if len(links) >= want * 2:
+            break
+    got = 0
+    used = set()
+    for u in sorted(links, key=lambda x: re.findall(r"\d{4}-\d{2}-\d{2}", x)[-1], reverse=True):
+        if got >= want:
+            break
+        day = re.findall(r"\d{4}-\d{2}-\d{2}", u)[-1]
+        try:
+            r = requests.get(u, headers=H, timeout=40)
+            rows = parse_mfnav(r.text)
+        except Exception as e:
+            print(day, "failed:", repr(e))
+            continue
+        if len(rows) < 10:
+            print(day, "no NAV table found (%d rows) %s" % (len(rows), u))
+            continue
+        label = rows[0]["label"]
+        if (label, day[:4]) in used:
+            continue
+        used.add((label, day[:4]))
+        print("%s: %s, %d funds (%s)" % (day, label, len(rows), u))
+        if not dry:
+            for i in range(0, len(rows), 100):
+                send("mfnav", rows=[dict(x, d=day) for x in rows[i:i + 100]])
+        got += 1
+    print("mfnav: %d months read" % got)
+
+
 def find_key(o, names):
     """First value found under any of the given (lower-case) key names, searching nested dictionaries."""
     if isinstance(o, dict):
@@ -828,4 +900,4 @@ def cmd_auto():
 
 
 if __name__ == "__main__":
-    {"probe": cmd_probe, "live": cmd_live, "close": cmd_close, "history": cmd_history, "fresh": cmd_fresh, "floor": cmd_floor, "auto": cmd_auto, "longhistory": cmd_longhistory, "fundamentals": cmd_fundamentals, "floorarchive": cmd_floorarchive, "events": cmd_events, "floorback": cmd_floorback, "openhist": cmd_openhist, "shares": cmd_shares}.get(sys.argv[1] if len(sys.argv) > 1 else "", lambda: print(__doc__))()
+    {"probe": cmd_probe, "live": cmd_live, "close": cmd_close, "history": cmd_history, "fresh": cmd_fresh, "floor": cmd_floor, "auto": cmd_auto, "longhistory": cmd_longhistory, "fundamentals": cmd_fundamentals, "floorarchive": cmd_floorarchive, "events": cmd_events, "floorback": cmd_floorback, "openhist": cmd_openhist, "mfnav": cmd_mfnav, "shares": cmd_shares}.get(sys.argv[1] if len(sys.argv) > 1 else "", lambda: print(__doc__))()

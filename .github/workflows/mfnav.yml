@@ -1,0 +1,29 @@
+name: Sanket mutual fund NAV
+# Reads the monthly mutual fund NAV tables (every fund's NAV per unit) and stores them. Runs weekly because new months appear in the first days of the Nepali month.
+# By hand: months = how many of the newest monthly tables to read (use 12 once to fill in the past); dry = true to only print.
+on:
+  schedule:
+    - cron: "40 6 * * 1,4"
+  workflow_dispatch:
+    inputs:
+      months:
+        description: "How many monthly tables to read (2 daily use, 12 to fill in the past)"
+        required: false
+        default: "2"
+      dry:
+        description: "true = only print, store nothing"
+        required: false
+        default: "false"
+jobs:
+  mfnav:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -q requests git+https://github.com/basic-bgnr/NepseUnofficialApi
+      - run: python -u feed.py mfnav ${{ github.event.inputs.months || '2' }} ${{ github.event.inputs.dry == 'true' && 'dry' || '' }}
+        env:
+          NP_API: ${{ secrets.NP_API }}
+          NP_KEY: ${{ secrets.NP_KEY }}
