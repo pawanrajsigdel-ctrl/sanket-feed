@@ -650,7 +650,7 @@ def parse_mfnav(html):
         if len(cells) < 5:
             continue
         for i, c in enumerate(cells):
-            if re.fullmatch(r"[A-Z][A-Z0-9]{2,9}", c) and i + 2 < len(cells):
+            if re.fullmatch(r"[A-Z0-9]{3,10}", c) and re.search(r"[A-Z]", c) and i + 2 < len(cells):
                 try:
                     nav, prev = float(cells[i + 1].replace(",", "")), float(cells[i + 2].replace(",", ""))
                 except ValueError:
@@ -661,16 +661,42 @@ def parse_mfnav(html):
     return out
 
 
+MFNAV_SEED = """
+mangsir 2024-01-02; shrawan 2023-09-04; shrawan 2024-09-05; kartik 2024-12-02; mangsir 2025-01-01; poush 2025-01-30
+kartik 2025-12-02; mangsir 2025-12-31; poush 2026-02-02; magh 2026-03-01; falgun 2026-03-31; chaitra 2026-05-03
+baisakh 2026-06-01; jestha 2026-06-30; ashad 2026-08-03; shrawan 2026-09-02; ashwin 2026-11-03
+""".replace("\n", ";")
+MFNAV_SEED_URLS = {
+    ("mangsir", "2025-01-01"): "mangsir-insights-mutual-fund-trends-in-nepal-sector-allocations-top-stocks-and-nav-movements-unveiled-2025-01-01",
+    ("poush", "2025-01-30"): "overview-of-mutual-fund-trends-in-nepal-sector-wise-investments-top-stocks-and-nav-changes-in-poush-2025-01-30",
+    ("ashad", "2026-08-03"): "how-did-the-mutual-funds-perform-in-ashad-a-complete-analysis-of-multiple-factors-2026-08-03",
+}
+
+
+def mfnav_seed_links():
+    out = []
+    for part in MFNAV_SEED.split(";"):
+        part = part.strip()
+        if not part:
+            continue
+        mon, day = part.split()
+        slug = MFNAV_SEED_URLS.get((mon, day)) or "know-how-did-the-mutual-funds-perform-in-%s-a-complete-analysis-of-multiple-factors-%s" % (mon, day)
+        out.append("https://www.sharesansar.com/newsdetail/" + slug)
+    return out
+
+
 def cmd_mfnav():
     """Monthly NAV per unit of every mutual fund, from the public monthly mutual fund analysis articles.
-    `python feed.py mfnav` reads the newest 2 articles; `mfnav 12` the newest 12 (one-off, fills in the past); add `dry` to print only."""
+    `python feed.py mfnav` reads the newest 2 articles; `mfnav 12` the newest 12; `mfnav all` also reads every known monthly article back to 2023 (one-off); add `dry` to print only."""
     import re
     args = sys.argv[2:]
     dry = "dry" in args
     nums = [int(a) for a in args if a.isdigit()]
-    want = nums[0] if nums else 2
+    want = 999 if "all" in args else (nums[0] if nums else 2)
     H = {"User-Agent": "Mozilla/5.0 (compatible; SanketFeed/1.0)"}
     links, seen = [], set()
+    if "all" in args:
+        links = mfnav_seed_links(); seen = set(links)
     for page in ("https://www.sharesansar.com/category/mutual-fund", "https://www.sharesansar.com/category/mutual-fund?page=2", "https://www.sharesansar.com/category/mutual-fund?page=3", "https://www.sharesansar.com/category/mutual-fund?page=4", "https://www.sharesansar.com/category/mutual-fund?page=5", "https://www.sharesansar.com/category/mutual-fund?page=6"):
         try:
             r = requests.get(page, headers=H, timeout=30)
@@ -683,6 +709,7 @@ def cmd_mfnav():
                 seen.add(u); links.append(u if u.startswith("http") else "https://www.sharesansar.com" + u)
         if len(links) >= want * 2:
             break
+    print("%d article links to try" % len(links))
     got = 0
     used = set()
     for u in sorted(links, key=lambda x: re.findall(r"\d{4}-\d{2}-\d{2}", x)[-1], reverse=True):
