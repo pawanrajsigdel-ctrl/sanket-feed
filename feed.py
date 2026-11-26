@@ -798,7 +798,7 @@ def cmd_auto():
             if market_open():
                 cmd_live(until_close=True)
                 continue
-            if trading and n.time() > dt.time(15, 0) and closed_day != n.date() and n.time() < dt.time(18, 30):
+            if trading and n.time() > dt.time(15, 0) and closed_day != n.date():  # any time after 15:00 the same day, so a late start still saves the close
                 try:
                     got = cmd_close()
                 except Budget:
@@ -814,6 +814,8 @@ def cmd_auto():
                     print("broker numbers not released yet; trying again in 5 minutes")
                     time.sleep(300)
                 continue
+            if os.environ.get("NP_EXIT_AFTER_CLOSE") == "1" and not market_open() and (closed_day == n.date() or not trading or n.time() < dt.time(10, 0) and False):
+                print("Nothing left to do today; finished."); return
             if hist_day != n.date() and not market_open() and os.environ.get("NP_NO_HISTORY") != "1":
                 print("Loading price history...")
                 r = cmd_history()

@@ -3,7 +3,10 @@ name: Sanket live feed
 # It starts before the NEPSE session, sends live prices until 15:05 Nepal time, then saves the daily close (brokers, analysis).
 on:
   schedule:
-    - cron: "20 4 * * 0-4"   # 10:05 Nepal time; GitHub may start it up to about an hour late, the feed waits for the market by itself
+    - cron: "20 4 * * 0-4"   # 10:05 Nepal time; GitHub can start scheduled jobs hours late, so there are backups (only one runs at a time)
+    - cron: "50 4 * * 0-4"
+    - cron: "20 5 * * 0-4"
+    - cron: "50 5 * * 0-4"
   workflow_dispatch:
 concurrency:
   group: sanket-feed
