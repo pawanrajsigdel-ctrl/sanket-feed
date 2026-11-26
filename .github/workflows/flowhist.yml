@@ -1,0 +1,42 @@
+name: Sanket broker history (all years)
+# Builds the whole history of who bought and sold each stock (2015 onwards) from the open floorsheet dataset, in small files: data/flow/<SYMBOL>.json.gz.
+# One line per stock per trading day: trades, shares, turnover, high, low and the top 5 buying and selling brokers. About 25 KB per trading day in total.
+# By hand: from_year and to_year. Start with 2024 to 2026, then run older years (2020 to 2023, 2015 to 2019). Safe to run again; saved days are skipped.
+on:
+  workflow_dispatch:
+    inputs:
+      from_year:
+        description: "First year"
+        required: true
+        default: "2024"
+      to_year:
+        description: "Last year"
+        required: true
+        default: "2026"
+permissions:
+  contents: write
+concurrency:
+  group: sanket-flowhist
+  cancel-in-progress: false
+jobs:
+  flow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -q requests git+https://github.com/basic-bgnr/NepseUnofficialApi
+      - name: Build the history
+        run: python -u feed.py flowhist ${{ github.event.inputs.from_year }} ${{ github.event.inputs.to_year }}
+        env:
+          NP_API: ${{ secrets.NP_API }}
+          NP_KEY: ${{ secrets.NP_KEY }}
+      - name: Save to the repository
+        if: always()
+        run: |
+          git config user.name "sanket-bot"; git config user.email "sanket-bot@users.noreply.github.com"
+          git add -A data/flow
+          git diff --staged --quiet && echo "nothing new" && exit 0
+          git commit -qm "Broker history ${{ github.event.inputs.from_year }}-${{ github.event.inputs.to_year }}"
+          git pull -q --rebase origin main && git push -q origin HEAD:main

@@ -710,6 +710,87 @@ def cmd_mfnav():
     print("mfnav: %d months read" % got)
 
 
+def flow_day(text):
+    """One day of the open floorsheet (CSV text) boiled down per stock: trades, shares, turnover, high and low rate, and the 5 brokers who bought and sold most.
+    Returns {symbol: [trades, qty, amount, hi, lo, [[broker, qty, avg_rate]...buyers], [[broker, qty, avg_rate]...sellers]]}."""
+    import csv, io
+    agg = {}
+    for t in csv.DictReader(io.StringIO(text)):
+        try:
+            sy = str(t["symbol"]).upper(); q = float(t["quantity"]); r = float(t["rate"]); b = int(float(t["buyer"] or 0)); sl = int(float(t["seller"] or 0))
+        except Exception:
+            continue
+        a = agg.setdefault(sy, [0, 0.0, 0.0, 0.0, 1e18, {}, {}])
+        a[0] += 1; a[1] += q; a[2] += q * r; a[3] = max(a[3], r); a[4] = min(a[4], r)
+        x = a[5].setdefault(b, [0.0, 0.0]); x[0] += q; x[1] += q * r
+        y = a[6].setdefault(sl, [0.0, 0.0]); y[0] += q; y[1] += q * r
+    out = {}
+    for sy, a in agg.items():
+        top = lambda m: [[k, int(v[0]), round(v[1] / v[0], 2)] for k, v in sorted(m.items(), key=lambda kv: -kv[1][0])[:5]]
+        out[sy] = [a[0], int(a[1]), round(a[2]), a[3], a[4] if a[4] < 1e17 else 0, top(a[5]), top(a[6])]
+    return out
+
+
+def cmd_flowhist():
+    """Whole history of who bought and sold each stock, from the open floorsheet dataset (2015 onwards), kept small: one file per stock in data/flow/
+    with one line per trading day (trades, shares, turnover, high, low and the top 5 buying and selling brokers).
+    `python feed.py flowhist 2025` does one year; `flowhist 2023 2026` does 2023 to 2026. Days already saved are skipped, so it can be run again."""
+    import gzip, re
+    from concurrent.futures import ThreadPoolExecutor
+    a = [int(x) for x in sys.argv[2:] if x.isdigit()]
+    y0, y1 = (a[0], a[1] if len(a) > 1 else a[0]) if a else (now_np().year, now_np().year)
+    os.makedirs("data/flow", exist_ok=True)
+    cols = ["d", "trades", "qty", "amount", "hi", "lo", "buyers", "sellers"]
+    fname = lambda sy: "data/flow/%s.json.gz" % re.sub(r"[^A-Z0-9_.-]", "_", sy)
+    def load(sy):
+        f = fname(sy)
+        if os.path.exists(f):
+            try:
+                return {r[0]: r for r in json.load(gzip.open(f, "rt", encoding="utf-8"))["rows"]}
+            except Exception:
+                pass
+        return {}
+    done_f = "data/flow/_days.json"
+    done = set(json.load(open(done_f))) if os.path.exists(done_f) else set()
+    today = now_np().date()
+    for year in range(y0, y1 + 1):
+        days = []
+        d = dt.date(year, 1, 1)
+        while d.year == year and d <= today:
+            if d.weekday() not in (4, 5) and d.isoformat() not in done:
+                days.append(d.isoformat())
+            d += dt.timedelta(days=1)
+        print("%d: %d days to read" % (year, len(days)))
+        fresh = {}
+        def get(ds):
+            for _ in range(3):
+                try:
+                    r = requests.get(OPEN_FLOOR % (ds[:4], ds), timeout=120)
+                    if r.status_code == 404:
+                        return ds, None
+                    if r.status_code == 200:
+                        return ds, flow_day(r.text)
+                except Exception:
+                    time.sleep(2)
+            return ds, False
+        with ThreadPoolExecutor(max_workers=6) as ex:
+            for ds, res in ex.map(get, days):
+                if res is False:
+                    print("  %s: could not read, will retry next run" % ds)
+                    continue
+                done.add(ds)
+                if res:
+                    for sy, v in res.items():
+                        fresh.setdefault(sy, {})[ds] = [ds] + v
+        for sy, rows in fresh.items():
+            cur = load(sy); cur.update(rows)
+            with gzip.open(fname(sy), "wt", encoding="utf-8", compresslevel=9) as f:
+                json.dump({"s": sy, "cols": cols, "rows": [cur[k] for k in sorted(cur)]}, f, separators=(",", ":"))
+        json.dump(sorted(done), open(done_f, "w"))
+        print("%d finished: %d stocks updated" % (year, len(fresh)))
+    print("flowhist finished; %d days stored, %d stock files" % (len(done), len([x for x in os.listdir("data/flow") if x.endswith(".gz")])))
+
+
 def find_key(o, names):
     """First value found under any of the given (lower-case) key names, searching nested dictionaries."""
     if isinstance(o, dict):
@@ -900,4 +981,4 @@ def cmd_auto():
 
 
 if __name__ == "__main__":
-    {"probe": cmd_probe, "live": cmd_live, "close": cmd_close, "history": cmd_history, "fresh": cmd_fresh, "floor": cmd_floor, "auto": cmd_auto, "longhistory": cmd_longhistory, "fundamentals": cmd_fundamentals, "floorarchive": cmd_floorarchive, "events": cmd_events, "floorback": cmd_floorback, "openhist": cmd_openhist, "mfnav": cmd_mfnav, "shares": cmd_shares}.get(sys.argv[1] if len(sys.argv) > 1 else "", lambda: print(__doc__))()
+    {"probe": cmd_probe, "live": cmd_live, "close": cmd_close, "history": cmd_history, "fresh": cmd_fresh, "floor": cmd_floor, "auto": cmd_auto, "longhistory": cmd_longhistory, "fundamentals": cmd_fundamentals, "floorarchive": cmd_floorarchive, "events": cmd_events, "floorback": cmd_floorback, "openhist": cmd_openhist, "mfnav": cmd_mfnav, "flowhist": cmd_flowhist, "shares": cmd_shares}.get(sys.argv[1] if len(sys.argv) > 1 else "", lambda: print(__doc__))()
