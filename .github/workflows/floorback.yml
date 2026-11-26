@@ -1,13 +1,13 @@
 name: Sanket floorsheet past days
-# Fills in earlier trading days of the floorsheet archive (NEPSE gives an earlier day one company at a time, so each day takes a few minutes).
+# Fills in earlier trading days of the floorsheet archive from the open NEPSE floorsheet dataset (NEPSE itself only serves the current day).
 # Run it by hand: days = how many missing trading days to add (newest first). Run it again to go further back. Days already saved are skipped.
 on:
   workflow_dispatch:
     inputs:
       days:
-        description: "How many past trading days to add"
+        description: "How many past trading days to add (each is about 0.6 MB)"
         required: false
-        default: "10"
+        default: "60"
 permissions:
   contents: write
 concurrency:
@@ -16,18 +16,17 @@ concurrency:
 jobs:
   back:
     runs-on: ubuntu-latest
-    timeout-minutes: 345
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - run: pip install -q git+https://github.com/basic-bgnr/NepseUnofficialApi requests
-      - name: Read the past days (stops by itself before the time limit)
-        run: python -u feed.py floorback ${{ github.event.inputs.days || '10' }}
+      - run: pip install -q requests git+https://github.com/basic-bgnr/NepseUnofficialApi
+      - name: Copy the past days
+        run: python -u feed.py floorback ${{ github.event.inputs.days || '60' }}
         env:
           NP_API: ${{ secrets.NP_API }}
           NP_KEY: ${{ secrets.NP_KEY }}
-          NP_BUDGET_MIN: "320"
       - name: Save to the repository
         if: always()
         run: |

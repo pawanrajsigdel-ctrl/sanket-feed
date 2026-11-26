@@ -542,68 +542,100 @@ def floor_row(t, fallback=""):
             num(pick(t, "contractRate", "rate")), num(pick(t, "contractAmount", "amount")), hhmmss(pick(t, "tradeTime", "contractTime", "businessDate", default="")), str(pick(t, "contractId", "id", default=""))]
 
 
+OPEN_FLOOR = "https://raw.githubusercontent.com/rajeevpaudel/nepse-history/main/data/floorsheet/%s/%s.csv"
+OPEN_HIST = "https://raw.githubusercontent.com/menaceXnadin/nepse-historical-market-data-csv/master/data/"
+
+
 def cmd_floorback():
-    """Fills in past days of the floorsheet archive. NEPSE serves the floorsheet of an earlier date one company at a time, so each missing trading day takes
-    one request per company (a few minutes). `python feed.py floorback 10` fills the 10 most recent missing trading days, newest first, and stops early when time runs out.
-    Run it again to continue; days already saved are skipped."""
-    import gzip
-    want = int((sys.argv[2:] or ["10"])[0])
-    budget = float(os.environ.get("NP_BUDGET_MIN", "300")) * 60
-    t0 = time.time()
+    """Fills in past days of the floorsheet archive from the open NEPSE floorsheet dataset (NEPSE itself only serves the current day).
+    `python feed.py floorback 60` saves the 60 most recent missing trading days, newest first; days already saved are skipped. Run again to go further back."""
+    import csv, gzip, io
+    want = int((sys.argv[2:] or ["30"])[0])
     os.makedirs("data/floor", exist_ok=True)
     have = set(x[:-8] for x in os.listdir("data/floor") if x.endswith(".json.gz"))
-    syms = sorted(s for s in sectors() if "/" not in s)
-    print("%d companies; %d days already saved" % (len(syms), len(have)))
     today = now_np().date()
-    done = 0
-    for back in range(1, 400):
+    done = missing = 0
+    for back in range(1, 800):
         d = today - dt.timedelta(days=back)
-        if d.weekday() in (4, 5) or d.isoformat() in have:  # Friday and Saturday are closed
-            continue
-        if done >= want or time.time() - t0 > budget:
-            break
         ds = d.isoformat()
-        busy = 0
-        for probe in ("NABIL", "NICA", "NTC", "HRL", "SBL"):
-            if probe in syms:
-                try:
-                    if nepse.getFloorSheetOf(probe, ds):
-                        busy = 1
-                        break
-                except Exception as e:
-                    print("  probe %s %s failed: %r" % (probe, ds, e))
-        if not busy:
-            print("%s: no trades (holiday or too old), skipped" % ds)
-            have.add(ds)
+        if d.weekday() in (4, 5) or ds in have:
             continue
-        rows, bad = [], 0
-        for s in syms:
-            if time.time() - t0 > budget:
-                break
-            for attempt in range(3):
-                try:
-                    for t in nepse.getFloorSheetOf(s, ds) or []:
-                        rows.append(floor_row(t, s))
-                    break
-                except Exception as e:
-                    if attempt == 2:
-                        bad += 1
-                    time.sleep(1.5)
-        if time.time() - t0 > budget:
-            print("%s: out of time before every company was read; day not saved" % ds)
+        if done >= want or missing >= 25:
             break
-        if len(rows) < 500 or bad > 25:
-            print("%s: only %d trades, %d companies failed; day not saved" % (ds, len(rows), bad))
+        try:
+            r = requests.get(OPEN_FLOOR % (ds[:4], ds), timeout=90)
+        except Exception as e:
+            print("%s: %r" % (ds, e))
+            missing += 1
+            continue
+        if r.status_code == 404:
+            print("%s: not in the dataset (holiday or not added yet)" % ds)
+            missing += 1
+            continue
+        if r.status_code != 200:
+            print("%s: HTTP %s" % (ds, r.status_code))
+            missing += 1
+            continue
+        missing = 0
+        rows = []
+        for t in csv.DictReader(io.StringIO(r.text)):
+            try:
+                rows.append([str(t["symbol"]).upper(), int(float(t["buyer"] or 0)), int(float(t["seller"] or 0)), float(t["quantity"]), float(t["rate"]), float(t["amount"]), "", str(t["transaction_no"])])
+            except Exception:
+                continue
+        if len(rows) < 500:
+            print("%s: only %d trades, skipped" % (ds, len(rows)))
             continue
         body = json.dumps({"d": ds, "cols": ["symbol", "buyer", "seller", "qty", "rate", "amount", "time", "id"], "rows": rows}, separators=(",", ":"))
         with gzip.open("data/floor/%s.json.gz" % ds, "wt", encoding="utf-8", compresslevel=9) as f:
             f.write(body)
         have.add(ds)
         done += 1
-        floor_index()
-        print("%s: %d trades saved (%d companies failed); %d of %d days done, %.0f min used" % (ds, len(rows), bad, done, want, (time.time() - t0) / 60))
+        print("%s: %d trades saved (%d of %d)" % (ds, len(rows), done, want))
     kept = floor_index()
     print("floorback finished: %d days added, %d days in the archive" % (done, len(kept)))
+
+
+def cmd_openhist():
+    """One-off import of history from open datasets: every company's reported quarters (profit, EPS, net worth, ROE) since FY 073/074 and the sector index
+    history (last 400 days). `python feed.py openhist` imports both; `openhist quarters` or `openhist index` imports one."""
+    import csv, io
+    only = sys.argv[2] if len(sys.argv) > 2 else ""
+    if only in ("", "quarters"):
+        r = requests.get(OPEN_HIST + "quarterly_reports.csv", timeout=90)
+        r.raise_for_status()
+        rows = []
+        for t in csv.DictReader(io.StringIO(r.text)):
+            q = str(t.get("quarter", "")).lower().replace("q", "")
+            if not t.get("symbol") or not q.isdigit():
+                continue
+            rows.append({"symbol": t["symbol"], "fy": t["fiscal_year"], "q": int(q), "eps": t.get("eps", ""), "net_profit": t.get("net_profit", ""), "net_worth": t.get("net_worth", ""), "roe": t.get("roe", ""),
+                         "roa": t.get("roa", ""), "paidup": t.get("paidup_capital", ""), "assets": t.get("total_assets", ""), "deposit": t.get("deposit", "")})
+        print("quarterly reports: %d rows read" % len(rows))
+        for i in range(0, len(rows), 250):
+            send("quarters", rows=rows[i:i + 250])
+        print("quarterly reports stored")
+    if only in ("", "index"):
+        codes = ["NEPSE", "BANKING", "DEVBANK", "FINANCE", "HOTELS", "HYDROPOWER", "INVESTMENT", "LIFEINSU", "NONLIFEINSU", "MANUFACTURE", "MICROFINANCE", "MUTUAL", "OTHERS", "TRADING"]
+        cutoff = (now_np().date() - dt.timedelta(days=400)).isoformat()
+        for code in codes:
+            folder = "index" if code == "NEPSE" else "subindices"
+            r = requests.get("%s%s/adjusted/%s_adjusted.csv" % (OPEN_HIST, folder, code), timeout=60)
+            if r.status_code != 200:
+                print("  %s: HTTP %s" % (code, r.status_code))
+                continue
+            rows = []
+            prev = None
+            for t in csv.DictReader(io.StringIO(r.text)):
+                d = str(t["time"])[:10]
+                v = float(t["close"] or 0)
+                if d >= cutoff and v > 0:
+                    rows.append({"code": code, "d": d, "value": v, "chg": round((v / prev - 1) * 100, 2) if prev else 0, "turnover": float(t.get("volume") or 0) if code == "NEPSE" else 0})
+                prev = v if v > 0 else prev
+            for i in range(0, len(rows), 250):
+                send("indexhist", rows=rows[i:i + 250])
+            print("  %s: %d days sent" % (code, len(rows)))
+    print("open history import finished")
 
 
 def find_key(o, names):
@@ -794,4 +826,4 @@ def cmd_auto():
 
 
 if __name__ == "__main__":
-    {"probe": cmd_probe, "live": cmd_live, "close": cmd_close, "history": cmd_history, "fresh": cmd_fresh, "floor": cmd_floor, "auto": cmd_auto, "longhistory": cmd_longhistory, "fundamentals": cmd_fundamentals, "floorarchive": cmd_floorarchive, "events": cmd_events, "floorback": cmd_floorback, "shares": cmd_shares}.get(sys.argv[1] if len(sys.argv) > 1 else "", lambda: print(__doc__))()
+    {"probe": cmd_probe, "live": cmd_live, "close": cmd_close, "history": cmd_history, "fresh": cmd_fresh, "floor": cmd_floor, "auto": cmd_auto, "longhistory": cmd_longhistory, "fundamentals": cmd_fundamentals, "floorarchive": cmd_floorarchive, "events": cmd_events, "floorback": cmd_floorback, "openhist": cmd_openhist, "shares": cmd_shares}.get(sys.argv[1] if len(sys.argv) > 1 else "", lambda: print(__doc__))()

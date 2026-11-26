@@ -1,0 +1,26 @@
+name: Sanket open history import
+# One-off: imports every company's reported quarters since FY 073/074 (profit, EPS, net worth, ROE) and the last 400 days of the sector indices from open datasets.
+# Safe to run again; the same rows just replace themselves. Takes about 3 minutes.
+on:
+  workflow_dispatch:
+    inputs:
+      what:
+        description: "Leave empty for both, or type quarters or index"
+        required: false
+        default: ""
+concurrency:
+  group: sanket-openhist
+  cancel-in-progress: false
+jobs:
+  openhist:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -q requests git+https://github.com/basic-bgnr/NepseUnofficialApi
+      - run: python -u feed.py openhist ${{ github.event.inputs.what }}
+        env:
+          NP_API: ${{ secrets.NP_API }}
+          NP_KEY: ${{ secrets.NP_KEY }}
