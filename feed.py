@@ -58,6 +58,11 @@ class Budget(Exception):
 
 def send(kind, **body):
     body["kind"] = kind
+    try:
+        import archive
+        archive.save(kind, body)   # a free copy in this repository first, so a blocked database never loses a record
+    except Exception as e:
+        print("  ! archive:", repr(e))
     for attempt in range(3):  # a dropped connection or a 5xx is tried again
         try:
             r = requests.post(API + "/api/np/ingest", headers={"x-np-key": KEY}, json=body, timeout=30)

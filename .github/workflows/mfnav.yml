@@ -14,6 +14,8 @@ on:
         description: "true = only print, store nothing"
         required: false
         default: "false"
+permissions:
+  contents: write
 jobs:
   mfnav:
     runs-on: ubuntu-latest
@@ -27,3 +29,11 @@ jobs:
         env:
           NP_API: ${{ secrets.NP_API }}
           NP_KEY: ${{ secrets.NP_KEY }}
+      - name: Save the records to the repository
+        if: ${{ github.event.inputs.dry != 'true' && github.event.inputs.dry != 'dry' && github.event.inputs.check == '' }}
+        run: |
+          git config user.name "sanket-bot"; git config user.email "sanket-bot@users.noreply.github.com"
+          git add -A data
+          git diff --staged --quiet && echo "nothing new" && exit 0
+          git commit -qm "Records mfnav $(date -u +%F)"
+          for i in 1 2 3; do git pull -q --rebase origin main && git push -q origin HEAD:main && exit 0; sleep 5; done; exit 1
