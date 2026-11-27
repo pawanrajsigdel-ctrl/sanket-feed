@@ -28,10 +28,12 @@ jobs:
         env:
           NP_API: ${{ secrets.NP_API }}
           NP_KEY: ${{ secrets.NP_KEY }}
+      - name: Build the floorsheet story of every stock (who bought, who sold, pressure, sliced orders)
+        run: python story.py
       - name: Save to the repository
         run: |
           git config user.name "sanket-bot"; git config user.email "sanket-bot@users.noreply.github.com"
-          git add -A data/floor
+          git add -A data/floor data/story
           git diff --staged --quiet && echo "nothing new" && exit 0
           git commit -qm "Floorsheet $(date -u +%F)"
           git pull -q --rebase origin main && git push -q origin HEAD:main
