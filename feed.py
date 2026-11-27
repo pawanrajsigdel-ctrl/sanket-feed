@@ -86,7 +86,7 @@ def now_np():
 
 def market_open():
     n = now_np()
-    return n.weekday() in (6, 0, 1, 2, 3) and dt.time(10, 55) <= n.time() <= dt.time(15, 5)  # Sunday to Thursday
+    return n.weekday() in (6, 0, 1, 2, 3, 4) and dt.time(10, 55) <= n.time() <= dt.time(15, 5)  # Sunday to Friday
 
 
 def sectors():
@@ -558,7 +558,7 @@ def cmd_floorback():
     for back in range(1, 800):
         d = today - dt.timedelta(days=back)
         ds = d.isoformat()
-        if d.weekday() in (4, 5) or ds in have:
+        if d.weekday() in (5,) or ds in have:
             continue
         if done >= want or missing >= 25:
             break
@@ -785,7 +785,7 @@ def cmd_flowhist():
         days = []
         d = dt.date(year, 1, 1)
         while d.year == year and d <= today:
-            if d.weekday() not in (4, 5) and d.isoformat() not in done:
+            if d.weekday() not in (5,) and d.isoformat() not in done:
                 days.append(d.isoformat())
             d += dt.timedelta(days=1)
         print("%d: %d days to read" % (year, len(days)))
@@ -1020,7 +1020,7 @@ def cmd_longhistory():
 
 
 def cmd_auto():
-    """Runs by itself, every day, with nothing to press: live prices while the market is open (Sunday to Thursday 11:00-15:00), then the daily close
+    """Runs by itself, every day, with nothing to press: live prices while the market is open (Sunday to Friday 11:00-15:00), then the daily close
     (retried every 5 minutes until NEPSE releases the broker numbers), then the price history until the day's free budget is used."""
     global AUTO
     AUTO = True
@@ -1030,7 +1030,7 @@ def cmd_auto():
     while True:
         try:
             n = now_np()
-            trading = n.weekday() in (6, 0, 1, 2, 3)
+            trading = n.weekday() in (6, 0, 1, 2, 3, 4)
             if market_open():
                 cmd_live(until_close=True)
                 continue
