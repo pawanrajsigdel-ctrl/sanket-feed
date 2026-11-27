@@ -59,7 +59,7 @@ def parse(page, base):
         d = DATE.search(tail) or DATE.search(clean(page[max(0, m.start() - 160): m.start()]))
         links.append({"t": t, "u": u, "d": d.group(1) if d else ""})
     text = clean(page)
-    return tables, links[:120], text[:3500]
+    return tables, links, text
 
 
 def run(name):
@@ -71,7 +71,13 @@ def run(name):
     if r.status_code != 200:
         return name, "HTTP %s" % r.status_code
     tables, links, text = parse(r.text, url)
-    body = {"name": name, "title": title, "url": url, "group": group, "fetched": dt.datetime.utcnow().isoformat() + "Z", "tables": tables, "links": links, "text": text}
+    extra = {}
+    for key in ("Policy Rates Last updated", "Short Term Interest Rates Last updated", "Standing Deposit", "Bank Rate", "Cash Reserve"):   # the rate boxes of the NRB home page, as plain text
+        i = text.rfind(key)
+        if i >= 0:
+            extra[key] = text[i:i + 280]
+    text = text[:3500]
+    body = {"name": name, "title": title, "url": url, "group": group, "fetched": dt.datetime.now(dt.timezone.utc).isoformat() + "Z", "tables": tables, "links": links[:200], "text": text, "boxes": extra}
     if not (tables or links):
         return name, "page read (%d chars) but no tables or headlines found" % len(r.text)
     os.makedirs(OUT, exist_ok=True)
@@ -89,7 +95,17 @@ def main():
         if "tables" in res[1] or "headlines" in res[1]:
             ok.append(n)
         time.sleep(1.2)
-    json.dump({"updated": dt.datetime.utcnow().isoformat() + "Z", "sources": [dict(name=n, title=SOURCES[n][0], url=SOURCES[n][1], group=SOURCES[n][2]) for n in ok]}, open(os.path.join(OUT, "index.json"), "w"), separators=(",", ":"))
+    # menus repeat on every page of a site: a headline found on three or more sources is navigation, not news
+    files = {n: json.load(gzip.open(os.path.join(OUT, n + ".json.gz"), "rt", encoding="utf-8")) for n in ok}
+    count = {}
+    for f in files.values():
+        for t in {x["t"].lower() for x in f["links"]}:
+            count[t] = count.get(t, 0) + 1
+    for n, f in files.items():
+        f["links"] = [x for x in f["links"] if count.get(x["t"].lower(), 0) < 3][:120]
+        with gzip.open(os.path.join(OUT, n + ".json.gz"), "wt", encoding="utf-8", compresslevel=9) as fh:
+            json.dump(f, fh, separators=(",", ":"), ensure_ascii=False)
+    json.dump({"updated": dt.datetime.now(dt.timezone.utc).isoformat() + "Z", "sources": [dict(name=n, title=SOURCES[n][0], url=SOURCES[n][1], group=SOURCES[n][2]) for n in ok]}, open(os.path.join(OUT, "index.json"), "w"), separators=(",", ":"))
     print("policy: %d of %d sources saved" % (len(ok), len(names)))
 
 
