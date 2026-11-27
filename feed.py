@@ -210,9 +210,72 @@ def depth_loop(symbols_fn):
         time.sleep(120)
 
 
+TAPE = {"seen": set(), "first": True, "sig": ""}
+BIG_AMOUNT = float(os.environ.get("NP_BIG", "2500000"))   # a single trade of Rs 25 lakh or more is a "big print"
+
+
+def tape_build(sheet, state):
+    """Reads the whole day's trades and returns (new big trades, sliced-order alerts).
+    NEPSE hides the broker numbers until the close, so this works only from size, price and order:
+      * big print = one trade of Rs 25 lakh or more, or one that is 10 times the stock's usual trade size
+      * slice alert = the same quantity traded again and again in one stock (a big order cut into equal pieces), with the price direction of those pieces
+    After the close the same trades are matched to their brokers from the floorsheet archive."""
+    by = {}
+    for t in sheet:
+        s = str(pick(t, "stockSymbol", "symbol", default="")).upper()
+        if not s:
+            continue
+        by.setdefault(s, []).append((str(pick(t, "contractId", "id", default="")), num(pick(t, "contractQuantity")), num(pick(t, "contractRate")), num(pick(t, "contractAmount")), hhmmss(pick(t, "tradeTime", "contractTime", default=""))))
+    prints, alerts = [], []
+    for s, tr in by.items():
+        tr.sort(key=lambda x: int(x[0]) if x[0].isdigit() else 0)
+        qs = sorted(x[1] for x in tr)
+        usual = qs[len(qs) // 2] if len(tr) >= 20 else 0
+        prev = None
+        dirs = []
+        for (i, q, r, a, tm) in tr:
+            d = 0 if prev is None else (1 if r > prev else -1 if r < prev else 0)
+            dirs.append(d)
+            prev = r
+            if i and i not in state["seen"] and (a >= BIG_AMOUNT or (usual and q >= usual * 10 and a >= 500000)):
+                prints.append({"s": s, "id": i, "t": tm, "q": q, "p": r, "a": round(a), "d": d})
+        # equal-sized pieces
+        same = {}
+        for k, (i, q, r, a, tm) in enumerate(tr):
+            if q > 0:
+                same.setdefault(q, []).append((k, r, a, tm))
+        day_q = sum(x[1] for x in tr) or 1
+        for q, lst in same.items():
+            if len(lst) >= 6 and q * len(lst) >= day_q * 0.05 and sum(x[2] for x in lst) >= 2000000:
+                ups = sum(1 for x in lst if dirs[x[0]] > 0)
+                downs = sum(1 for x in lst if dirs[x[0]] < 0)
+                lean = "up" if ups >= downs * 1.5 and ups > 0 else "down" if downs >= ups * 1.5 and downs > 0 else "mixed"
+                alerts.append({"s": s, "k": "slice", "n": len(lst), "q": q, "tot": int(q * len(lst)), "p": round(sum(x[1] for x in lst) / len(lst), 1), "from": lst[0][3], "to": lst[-1][3], "lean": lean, "a": round(sum(x[2] for x in lst))})
+    for t in sheet:
+        i = str(pick(t, "contractId", "id", default=""))
+        if i:
+            state["seen"].add(i)
+    alerts.sort(key=lambda x: -x["a"])
+    prints.sort(key=lambda x: -x["a"])
+    if state["first"]:           # the first look at a day already under way: only its biggest trades so far
+        prints = prints[:40]
+        state["first"] = False
+    return prints[:120], alerts[:40]
+
+
 def sheet_agg():
     """Today's trades reduced to one line per stock: the price of its newest trade, total quantity, total amount and number of trades."""
     sheet = nepse.getFloorSheet() or []
+    try:
+        pr, al = tape_build(sheet, TAPE)
+        sig = json.dumps([[a["s"], a["n"], a["lean"]] for a in al])
+        if pr or sig != TAPE["sig"]:
+            TAPE["sig"] = sig
+            send("tape", d=now_np().strftime("%Y-%m-%d"), prints=pr, alerts=al)
+    except Budget:
+        raise
+    except Exception as e:
+        print("tape skipped:", repr(e))
     agg = {}
     for t in sheet:
         s = str(pick(t, "stockSymbol", "symbol", default="")).upper()
