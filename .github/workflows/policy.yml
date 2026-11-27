@@ -1,0 +1,28 @@
+name: Sanket rates and rules
+# Reads NRB (policy, interbank, short-term and bank rates, notices, circulars), SEBON (circulars, laws) and market news, and keeps a dated copy in data/policy/.
+on:
+  schedule:
+    - cron: "15 4 * * *"   # about 10:00 Nepal time, every day
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: sanket-policy
+  cancel-in-progress: false
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -q requests
+      - run: python -u policy.py
+      - name: Save to the repository
+        run: |
+          git config user.name "sanket-bot"; git config user.email "sanket-bot@users.noreply.github.com"
+          git add -A data/policy
+          git diff --staged --quiet && echo "nothing new" && exit 0
+          git commit -qm "Rates and rules $(date -u +%F)"
+          for i in 1 2 3; do git pull -q --rebase origin main && git push -q origin HEAD:main && exit 0; sleep 5; done; exit 1

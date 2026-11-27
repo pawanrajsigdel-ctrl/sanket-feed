@@ -1,0 +1,106 @@
+{
+ "note": "Hand-checked facts with their source. Newer items come from the daily scrape.",
+ "items": [
+  {
+   "d": "2026-07-07",
+   "topic": "monetary policy",
+   "t": "NRB Monetary Policy FY 2026/27: policy rate, standing deposit facility rate and bank rate kept unchanged; CRR, SLR and standing liquidity facility provisions continue.",
+   "u": "https://theannapurnaexpress.com/story/65498/",
+   "tags": [
+    "nrb",
+    "policy rate",
+    "crr",
+    "slr",
+    "interest",
+    "bank rate",
+    "monetary"
+   ]
+  },
+  {
+   "d": "2026-07-07",
+   "topic": "monetary policy",
+   "t": "NRB targets 7% economic growth and inflation around 5.5% for FY 2026/27 and keeps the fixed exchange rate with the Indian rupee as the nominal anchor.",
+   "u": "https://kathmandupost.com/money/2026/07/07/nepal-s-central-bank-sticks-to-cautiously-flexible-monetary-policy-backs-government-s-7-percent-growth",
+   "tags": [
+    "nrb",
+    "growth",
+    "inflation",
+    "exchange rate",
+    "indian rupee",
+    "peg",
+    "monetary"
+   ]
+  },
+  {
+   "d": "2026-07-07",
+   "topic": "margin lending",
+   "t": "NRB will end the uniform lending standard for margin loans against listed shares; share and margin lending limits will be set according to the strength of each financial institution.",
+   "u": "https://theannapurnaexpress.com/story/65498/",
+   "tags": [
+    "margin",
+    "margin loan",
+    "margin lending",
+    "share loan",
+    "listed",
+    "nrb",
+    "limit",
+    "lending"
+   ]
+  },
+  {
+   "d": "2026-07-07",
+   "topic": "interbank rate",
+   "t": "The weighted average interbank rate of banks and financial institutions remains the operating target of monetary policy; NRB will use open market operations to keep it close to the policy rate.",
+   "u": "https://risingnepaldaily.com/news/83134",
+   "tags": [
+    "interbank",
+    "operating target",
+    "open market",
+    "liquidity",
+    "policy rate",
+    "nrb"
+   ]
+  },
+  {
+   "d": "2026-07-07",
+   "topic": "microfinance",
+   "t": "The unsecured loan ceiling for microfinance borrowers was raised to Rs 1.5 million.",
+   "u": "https://kathmandupost.com/money/2026/07/07/nepal-s-central-bank-sticks-to-cautiously-flexible-monetary-policy-backs-government-s-7-percent-growth",
+   "tags": [
+    "microfinance",
+    "unsecured",
+    "loan",
+    "ceiling",
+    "nrb"
+   ]
+  },
+  {
+   "d": "2026-07-07",
+   "topic": "bank stress",
+   "t": "NRB says it will closely monitor vulnerable banks and financial institutions under capital pressure.",
+   "u": "https://www.b360nepal.com/detail/29221/nrb-unveils-monetary-policy-for-fy-202627-targets-7-pc-growth",
+   "tags": [
+    "capital",
+    "vulnerable",
+    "bank",
+    "nrb",
+    "supervision"
+   ]
+  },
+  {
+   "d": "2026-01-15",
+   "topic": "deposit and lending rates",
+   "t": "NRB data for mid-January 2026: weighted average interest rate on deposits of commercial banks was 3.56% (saving 2.93%, fixed 5.24%, call 0.76%).",
+   "u": "https://www.nrb.org.np/bfr/2082-09mid-jan-2026",
+   "tags": [
+    "deposit",
+    "interest",
+    "saving",
+    "fixed",
+    "rate",
+    "bank",
+    "nrb"
+   ]
+  }
+ ]
+}
