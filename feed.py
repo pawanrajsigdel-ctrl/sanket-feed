@@ -242,7 +242,7 @@ def cmd_live(until_close=False):
     every = max(1.0, float(os.environ.get("NP_EVERY", "3")))
     use_trades = os.environ.get("NP_TRADES", "1") != "0"
     push_symbols()
-    seen, full_at, flow_at, index_at, busiest = {}, 0.0, 0.0, 0.0, []
+    seen, full_at, flow_at, index_at, subs_at, busiest = {}, 0.0, 0.0, 0.0, 0.0, []
     global DEPTH_ON
     if not DEPTH_ON:
         DEPTH_ON = True
@@ -266,9 +266,12 @@ def cmd_live(until_close=False):
                     rows = overlay(rows, agg)
                 except Exception as e:
                     print("floorsheet skipped:", repr(e))
-            if time.time() - index_at > 300:  # the index moves all day, so it is refreshed every 5 minutes
+            if time.time() - index_at > 45:  # the NEPSE index moves every minute; the sector indices follow every 5 minutes
                 index_at = time.time()
-                push_index(now_np().strftime("%Y-%m-%d"))
+                every5 = time.time() - subs_at > 290
+                if every5:
+                    subs_at = time.time()
+                push_index(now_np().strftime("%Y-%m-%d"), main_only=not every5)
             full = time.time() - full_at > 900
             out = [r for r in rows if full or seen.get(r["symbol"]) != (r["c"], r["v"])]
             for r in rows:
@@ -292,11 +295,11 @@ def cmd_live(until_close=False):
         time.sleep(max(0.0, every - (time.time() - t0)))
 
 
-def push_index(day):
+def push_index(day, main_only=False):
     """The NEPSE index and the sector indices as they stand now (while the market is open) or at the close."""
     try:
         idx = []
-        for r in (nepse.getNepseIndex() or []) + (nepse.getNepseSubIndices() or []):
+        for r in (nepse.getNepseIndex() or []) + ([] if main_only else (nepse.getNepseSubIndices() or [])):
             name = str(pick(r, "index", "indexName", default="")).strip()
             if name.upper() in ("NEPSE INDEX", "NEPSE"):
                 name = "NEPSE"
