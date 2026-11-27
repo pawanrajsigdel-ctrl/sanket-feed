@@ -242,7 +242,7 @@ def cmd_live(until_close=False):
     every = max(1.0, float(os.environ.get("NP_EVERY", "3")))
     use_trades = os.environ.get("NP_TRADES", "1") != "0"
     push_symbols()
-    seen, full_at, flow_at, busiest = {}, 0.0, 0.0, []
+    seen, full_at, flow_at, index_at, busiest = {}, 0.0, 0.0, 0.0, []
     global DEPTH_ON
     if not DEPTH_ON:
         DEPTH_ON = True
@@ -266,6 +266,9 @@ def cmd_live(until_close=False):
                     rows = overlay(rows, agg)
                 except Exception as e:
                     print("floorsheet skipped:", repr(e))
+            if time.time() - index_at > 300:  # the index moves all day, so it is refreshed every 5 minutes
+                index_at = time.time()
+                push_index(now_np().strftime("%Y-%m-%d"))
             full = time.time() - full_at > 900
             out = [r for r in rows if full or seen.get(r["symbol"]) != (r["c"], r["v"])]
             for r in rows:
@@ -289,11 +292,8 @@ def cmd_live(until_close=False):
         time.sleep(max(0.0, every - (time.time() - t0)))
 
 
-def cmd_close():
-    day = now_np().strftime("%Y-%m-%d")
-    push_symbols()
-    rows = today_rows()
-    send("prices", d=day, rows=rows)
+def push_index(day):
+    """The NEPSE index and the sector indices as they stand now (while the market is open) or at the close."""
     try:
         idx = []
         for r in (nepse.getNepseIndex() or []) + (nepse.getNepseSubIndices() or []):
@@ -302,8 +302,18 @@ def cmd_close():
                 name = "NEPSE"
             idx.append({"name": name, "d": day, "value": num(pick(r, "currentValue", "close")), "chg": num(pick(r, "perChange", "percentageChange")), "turnover": 0})
         send("index", rows=[x for x in idx if x["name"] and x["value"] > 0])
+    except Budget:
+        raise
     except Exception as e:
         print("index failed:", e)
+
+
+def cmd_close():
+    day = now_np().strftime("%Y-%m-%d")
+    push_symbols()
+    rows = today_rows()
+    send("prices", d=day, rows=rows)
+    push_index(day)
     stored = 0
     try:  # floorsheet totals per broker and stock (the single trades are not stored)
         agg = {}
