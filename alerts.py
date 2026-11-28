@@ -79,9 +79,25 @@ def main():
     for k in ("selling", "outside", "first", "building"):
         keep += sorted([i for i in items if i["k"] == k], key=lambda i: -i["val"])[:12]
     os.makedirs("data/alerts", exist_ok=True)
+    # what is new since the last close: keep the previous day's file and flag items that were not in it
+    prev, prev_day = set(), ""
+    try:
+        old = json.load(open("data/alerts/latest.json", encoding="utf-8"))
+        if old.get("d") and old["d"] != day:
+            json.dump(old, open("data/alerts/prev.json", "w", encoding="utf-8"), separators=(",", ":"))
+            prev_day = old["d"]; prev = {(i["s"], i["b"], i["k"]) for i in old.get("items", [])}
+        else:
+            try:
+                o2 = json.load(open("data/alerts/prev.json", encoding="utf-8")); prev_day = o2.get("d", ""); prev = {(i["s"], i["b"], i["k"]) for i in o2.get("items", [])}
+            except Exception:
+                pass
+    except Exception:
+        pass
+    for i in keep:
+        i["new"] = bool(prev_day) and (i["s"], i["b"], i["k"]) not in prev
     with open("data/alerts/latest.json", "w", encoding="utf-8") as f:
-        json.dump({"d": day, "window": WIN, "built": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"), "items": keep}, f, separators=(",", ":"))
-    print("alerts:", len(keep), "for", day, {k: sum(1 for i in keep if i["k"] == k) for k in ("selling", "outside", "first", "building")})
+        json.dump({"d": day, "prev": prev_day, "window": WIN, "built": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"), "items": keep}, f, separators=(",", ":"))
+    print("alerts:", len(keep), "for", day, "new:", sum(1 for i in keep if i.get("new")), {k: sum(1 for i in keep if i["k"] == k) for k in ("selling", "outside", "first", "building")})
 
 
 if __name__ == "__main__":
