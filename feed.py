@@ -1016,6 +1016,12 @@ def cmd_floorarchive():
         r = floor_row(t)
         if r[0]:
             rows.append(r)
+    # The trading day is the date inside the contract numbers (YYYYMMDD...), not today's date: run on a Saturday, NEPSE still serves Friday's trades.
+    from collections import Counter
+    ids = Counter(str(r[7])[:8] for r in rows if len(str(r[7])) >= 8 and str(r[7])[:8].isdigit())
+    if ids:
+        top = ids.most_common(1)[0][0]
+        day = "%s-%s-%s" % (top[:4], top[4:6], top[6:8])
     if len(rows) < 1000 or not any(r[1] > 0 for r in rows):
         print("floorsheet not complete yet (%d trades, broker numbers %s); try again later" % (len(rows), "hidden" if not any(r[1] > 0 for r in rows) else "present"))
         sys.exit(1)
