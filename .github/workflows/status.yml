@@ -1,0 +1,12 @@
+name: Sanket status check
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  look:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read the live database use
+        run: |
+          for u in https://techtara-api.techtara.workers.dev/api/np/status https://api.techtara.com.np/api/np/status; do echo "== $u"; curl -s -m 25 -w "\nHTTP %{http_code}\n" "$u" | head -c 6000; done
