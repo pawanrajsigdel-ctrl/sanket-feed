@@ -1,0 +1,34 @@
+name: Sanket trim history
+# The daily data files are rewritten every evening, so the repository's history grows by tens of MB a day. The history of a data repository has no value, so when the repository passes 600 MB this keeps today's files and drops the old versions (the free GitHub size guideline is 1 GB). Checked every Friday night Nepal time; safe to run by hand.
+on:
+  schedule:
+    - cron: "30 19 * * 5"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Trim even if the repository is under 600 MB (type yes)"
+        required: false
+        default: ""
+permissions:
+  contents: write
+concurrency:
+  group: sanket-trim
+  cancel-in-progress: false
+jobs:
+  trim:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trim when large
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ github.event.inputs.force }}
+        run: |
+          kb=$(gh api repos/${{ github.repository }} --jq .size)
+          echo "repository size: $kb KB"
+          if [ "$kb" -lt 600000 ] && [ "$FORCE" != "yes" ]; then echo "small enough, nothing to do"; exit 0; fi
+          git config user.name "sanket-bot"; git config user.email "bot@techtara.com.np"
+          git checkout --orphan trimmed
+          git add -A
+          git commit -qm "Trim history: keep the current files only"
+          git push -f origin trimmed:main
