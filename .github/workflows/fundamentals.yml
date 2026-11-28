@@ -2,7 +2,7 @@ name: Sanket company figures
 # Reads EPS, P/E, book value, P/B, dividend and bonus for every company (one public page about each second) and stores them. Runs each evening after the close.
 on:
   schedule:
-    - cron: "20 11 * * 0-5"   # 17:05 Nepal time, Sunday to Friday
+    - cron: "20 11 * * 1-5"   # 17:05 Nepal time, Monday to Friday
   workflow_dispatch:
     inputs:
       check:

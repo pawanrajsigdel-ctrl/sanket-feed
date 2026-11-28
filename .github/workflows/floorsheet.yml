@@ -2,7 +2,7 @@ name: Sanket floorsheet archive
 # Saves every trade of the day as one compressed file in this repository (kept 30 days), so Sanket can show the full floorsheet for free.
 on:
   schedule:
-    - cron: "15 10 * * 0-5"   # 16:00 Nepal time, Sunday to Friday
+    - cron: "15 10 * * 1-5"   # 16:00 Nepal time, Monday to Friday
   workflow_dispatch:
 permissions:
   contents: write

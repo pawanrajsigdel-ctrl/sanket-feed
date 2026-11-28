@@ -91,7 +91,7 @@ def now_np():
 
 def market_open():
     n = now_np()
-    return n.weekday() in (6, 0, 1, 2, 3, 4) and dt.time(10, 55) <= n.time() <= dt.time(15, 5)  # Sunday to Friday
+    return n.weekday() in (0, 1, 2, 3, 4) and dt.time(10, 55) <= n.time() <= dt.time(15, 5)  # Monday to Friday
 
 
 def sectors():
@@ -1101,7 +1101,7 @@ def cmd_longhistory():
 
 
 def cmd_auto():
-    """Runs by itself, every day, with nothing to press: live prices while the market is open (Sunday to Friday 11:00-15:00), then the daily close
+    """Runs by itself, every day, with nothing to press: live prices while the market is open (Monday to Friday 11:00-15:00), then the daily close
     (retried every 5 minutes until NEPSE releases the broker numbers), then the price history until the day's free budget is used."""
     global AUTO
     AUTO = True
@@ -1111,7 +1111,7 @@ def cmd_auto():
     while True:
         try:
             n = now_np()
-            trading = n.weekday() in (6, 0, 1, 2, 3, 4)
+            trading = n.weekday() in (0, 1, 2, 3, 4)
             if market_open():
                 cmd_live(until_close=True)
                 continue
