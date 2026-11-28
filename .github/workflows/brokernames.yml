@@ -1,0 +1,28 @@
+name: Sanket broker names
+# Saves the broker numbers with their company names (data/brokers.json). Runs on Sundays and by hand.
+on:
+  schedule:
+    - cron: "10 7 * * 1"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: sanket-brokernames
+  cancel-in-progress: false
+jobs:
+  names:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -q requests git+https://github.com/basic-bgnr/NepseUnofficialApi
+      - run: python -u brokernames.py
+      - name: Save to the repository
+        run: |
+          git config user.name "sanket-bot"; git config user.email "sanket-bot@users.noreply.github.com"
+          git add -A data/brokers.json
+          git diff --staged --quiet && echo "nothing new" && exit 0
+          git commit -qm "Broker names"
+          git pull -q --rebase origin main && git push -q origin HEAD:main
