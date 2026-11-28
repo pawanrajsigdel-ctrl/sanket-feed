@@ -58,6 +58,18 @@ class Budget(Exception):
 
 def send(kind, **body):
     body["kind"] = kind
+    # Every run may write only so many rows to the database (a row costs about three writes with its indexes). This keeps one job, or several in a day, far under the free daily limit.
+    if kind in ("floor", "history", "prices", "monthly", "fund", "events", "quarters", "mfnav"):
+        n_rows = len(body.get("rows") or [])
+        run_rows[0] += n_rows
+        if run_rows[0] > RUN_ROW_CAP:
+            print("  ! row cap for this run (%d rows) reached: the rest is saved in the repository only" % RUN_ROW_CAP)
+            try:
+                import archive
+                archive.save(kind, body)
+            except Exception as e:
+                print("  ! archive:", repr(e))
+            raise Budget()
     try:
         import archive
         archive.save(kind, body)   # a free copy in this repository first, so a blocked database never loses a record
@@ -126,6 +138,10 @@ def newest(data):
 
 
 last_stamp = [""]
+
+
+run_rows = [0]
+RUN_ROW_CAP = int(os.environ.get("NP_RUN_ROWS", "9000"))
 
 
 def trade_day():
@@ -389,6 +405,25 @@ def push_index(day, main_only=False):
         print("index failed:", e)
 
 
+def prune_floor(rows, per_stock=10, per_broker=12):
+    """Keep only the rows the pages use: for every stock its biggest buyers and sellers, and for every broker its biggest buys and sells (everything else stays in the free repository archive).
+    About 20,000 broker-by-stock rows a day become about 6,000, which keeps the database far from its free limit."""
+    keep = set()
+    by_s, by_b = {}, {}
+    for r in rows:
+        by_s.setdefault(r["symbol"], []).append(r)
+        by_b.setdefault(r["broker"], []).append(r)
+    for grp, n in ((by_s, per_stock), (by_b, per_broker)):
+        for lst in grp.values():
+            for key in ("buy_a", "sell_a"):
+                for r in sorted(lst, key=lambda x: -x[key])[:n]:
+                    if r[key] > 0:
+                        keep.add((r["broker"], r["symbol"]))
+    out = [r for r in rows if (r["broker"], r["symbol"]) in keep]
+    print("floor rows kept for the database: %d of %d" % (len(out), len(rows)))
+    return out
+
+
 def cmd_close():
     day = trade_day()
     push_symbols()
@@ -407,6 +442,7 @@ def cmd_close():
             x = agg.setdefault((b, s), [0, 0, 0, 0]); x[0] += q; x[1] += a
             y = agg.setdefault((sl, s), [0, 0, 0, 0]); y[2] += q; y[3] += a
         out = [{"broker": k[0], "symbol": k[1], "buy_q": v[0], "buy_a": v[1], "sell_q": v[2], "sell_a": v[3]} for k, v in agg.items() if k[0] > 0]
+        out = prune_floor(out)
         if not out:
             print("broker numbers are hidden by NEPSE until the market has closed; run close again after 15:00")
         for i in range(0, len(out), 400):
