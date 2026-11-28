@@ -10,10 +10,6 @@ jobs:
       - name: Read the live database use and the market page numbers
         run: |
           A=https://techtara-api.techtara.workers.dev
-          echo "== status"; curl -s -m 25 $A/api/np/status | python3 -c "import sys,json; d=json.load(sys.stdin); print('last_day',d.get('last_day'),'stocks',d.get('stocks')); b=d.get('budget',{}); print('writes',b.get('used'),'/',b.get('cap'),'reads',b.get('reads'),'/',b.get('read_cap'))"
-          echo "== market"; curl -s -m 25 $A/api/np/market | python3 -c "
-import sys,json
-d=json.load(sys.stdin)
-print('day',d.get('day'),'turnover',d.get('turnover'),'adv',d.get('adv'),'dec',d.get('dec'),'flat',d.get('flat'))
-print('indices',[(i.get('name'),i.get('value'),i.get('chg')) for i in (d.get('indices') or [])[:3]])"
+          echo "== status"; curl -s -m 25 $A/api/np/status | python3 -c "import sys,json; d=json.load(sys.stdin); b=d.get('budget',{}); print('last_day',d.get('last_day'),'stocks',d.get('stocks'),'| writes',b.get('used'),'/',b.get('cap'),'| reads',b.get('reads'),'/',b.get('read_cap'))"
+          echo "== market"; curl -s -m 25 $A/api/np/market | python3 -c "import sys,json; d=json.load(sys.stdin); print('day',d.get('day'),'turnover',d.get('turnover'),'adv',d.get('adv'),'dec',d.get('dec'),'flat',d.get('flat')); print('indices',[(i.get('name'),i.get('value'),i.get('chg')) for i in (d.get('indices') or [])[:3]])"
           echo "== site"; curl -s -m 25 -o /dev/null -w "nepse page HTTP %{http_code}\n" https://techtara.com.np/nepse
