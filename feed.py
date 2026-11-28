@@ -128,6 +128,16 @@ def newest(data):
 last_stamp = [""]
 
 
+def trade_day():
+    """The trading day the data on NEPSE's site belongs to: today on a weekday, otherwise the Friday before (NEPSE keeps serving the last session over the weekend). NP_DAY overrides it."""
+    o = os.environ.get("NP_DAY", "").strip()
+    if o:
+        return o
+    n = now_np()
+    back = {5: 1, 6: 2}.get(n.weekday(), 0)   # Saturday -> Friday, Sunday -> Friday
+    return (n - dt.timedelta(days=back)).strftime("%Y-%m-%d")
+
+
 def today_rows():
     data = live_raw()
     last_stamp[0] = newest(data)
@@ -380,7 +390,7 @@ def push_index(day, main_only=False):
 
 
 def cmd_close():
-    day = now_np().strftime("%Y-%m-%d")
+    day = trade_day()
     push_symbols()
     rows = today_rows()
     send("prices", d=day, rows=rows)

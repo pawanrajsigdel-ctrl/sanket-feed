@@ -1,0 +1,29 @@
+name: Sanket close now
+# Re-runs the day's close by hand (prices, indexes, broker totals) for the last trading day, or for the day you type. Safe to run twice.
+on:
+  workflow_dispatch:
+    inputs:
+      day:
+        description: "Trading day YYYY-MM-DD (empty = the last trading day)"
+        required: false
+        default: ""
+permissions:
+  contents: read
+concurrency:
+  group: sanket-closenow
+  cancel-in-progress: false
+jobs:
+  close:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -q requests git+https://github.com/basic-bgnr/NepseUnofficialApi
+      - run: python -u feed.py close
+        env:
+          NP_API: ${{ secrets.NP_API }}
+          NP_KEY: ${{ secrets.NP_KEY }}
+          NP_DAY: ${{ github.event.inputs.day }}
+          NP_FORCE: "1"
