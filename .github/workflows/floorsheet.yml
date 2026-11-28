@@ -33,10 +33,11 @@ jobs:
           python story.py
           pip install -q pandas
           python story_all.py --daily
+          python alerts.py
       - name: Save to the repository
         run: |
           git config user.name "sanket-bot"; git config user.email "sanket-bot@users.noreply.github.com"
-          git add -A data/floor data/story data/broker
+          git add -A data/floor data/story data/broker data/alerts
           git diff --staged --quiet && echo "nothing new" && exit 0
           git commit -qm "Floorsheet $(date -u +%F)"
           git pull -q --rebase origin main && git push -q origin HEAD:main
