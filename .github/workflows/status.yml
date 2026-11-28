@@ -10,4 +10,4 @@ jobs:
       - name: Read the live database use twice, a minute apart
         run: |
           A=https://techtara-api.techtara.workers.dev
-          for i in 1 2; do curl -s -m 25 $A/api/np/status | python3 -c "import sys,json; d=json.load(sys.stdin); b=d.get('budget',{}); print('reads',b.get('reads'),'writes',b.get('used'),'memo',b.get('memo_hits')); [print('  ',r[1],r[0][:110]) for r in b.get('reads_by',[])[:12]]"; [ $i = 1 ] && sleep 60; done
+          for i in 1 2; do curl -s -m 25 $A/api/np/status | python3 -c "import sys,json; d=json.load(sys.stdin); b=d.get('budget',{}); print('reads',b.get('reads'),'writes',b.get('used'),'memo',b.get('memo_hits')); [print('  ',r[1],r[0][:110]) for r in b.get('reads_by',[])[:12]]"; if [ $i = 1 ]; then sleep 60; fi; done
